@@ -147,6 +147,24 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 .battler.noart[data-motion="dead"] .ph, .battler.noart[data-motion="dying"] .ph { transform: rotate(82deg) translateX(10px); animation: none; opacity: .8; }
 .battler.noart[data-motion="victory"] .ph { animation: bob .4s ease-in-out infinite alternate; border-color: #ffe45e; }
 @keyframes bob { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+/* オンライン：入室前（作る／参加）と、部屋（ロビー） */
+#onlineEntry { display: grid; gap: 12px; }
+.entrycards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ecard { background: rgba(24, 36, 100, .55); border: 1px solid var(--win-line); border-radius: 10px; padding: 12px; display: grid; gap: 8px; align-content: start; }
+.ecard h3 { margin: 0; font-size: 1rem; }
+.lobbyhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.invite { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; }
+.invite-text { display: grid; gap: 8px; min-width: 0; }
+.invite-text .row input { flex: 1; min-width: 0; }
+.pcard { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; padding: 8px; border: 1px solid var(--win-line); border-radius: 10px; background: rgba(24, 36, 100, .55); }
+.pcard.me { border-color: #ffd54a; }
+.avatar { width: 64px; height: 64px; border-radius: 8px; background-repeat: no-repeat; background-color: #1a2250; }
+.pinfo { display: grid; gap: 4px; min-width: 0; }
+.plabel { font-size: .75rem; color: var(--muted); }
+.pname { font-weight: 800; font-size: 1.05rem; }
+.nameedit { display: flex; gap: 6px; flex-wrap: wrap; }
+.nameedit input { flex: 1; min-width: 8em; }
+@media (max-width: 560px) { .entrycards { grid-template-columns: 1fr; } .invite { grid-template-columns: 1fr; justify-items: start; } }
 </style>
 </head>
 <body>
@@ -182,25 +200,41 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       <div><h2 id="p2Title">相手のキャラ</h2><div class="faces" id="faces2"></div></div>
     </div>
     <div id="onlinePanel" hidden>
-      <div class="row">
-        <label for="onName">名前</label>
-        <input id="onName" type="text" maxlength="12" placeholder="あなたの名前">
-      </div>
-      <div class="row">
-        <button class="btn primary" id="btnCreateRoom" type="button">部屋を作る</button>
-        <span class="note">または</span>
-        <input id="roomInput" type="text" maxlength="6" placeholder="部屋コード" style="text-transform:uppercase;width:8em">
-        <button class="btn" id="btnJoinRoom" type="button">部屋に参加</button>
+      <div id="onlineEntry">
+        <div class="row">
+          <label for="onName">あなたの名前</label>
+          <input id="onName" type="text" maxlength="12" placeholder="例：たろう" autocomplete="nickname">
+        </div>
+        <div class="entrycards">
+          <div class="ecard">
+            <h3>部屋を作る</h3>
+            <p class="note">部屋コードとQRが出ます。相手にQRを見せるか、URLを送ってください。</p>
+            <button class="btn primary" id="btnCreateRoom" type="button">部屋を作る</button>
+          </div>
+          <div class="ecard">
+            <h3>部屋に参加する</h3>
+            <p class="note">相手から聞いた部屋コード（4文字）を入れます。</p>
+            <div class="row">
+              <input id="roomInput" type="text" maxlength="6" placeholder="部屋コード" style="text-transform:uppercase;width:7.5em;letter-spacing:.2em">
+              <button class="btn" id="btnJoinRoom" type="button">参加する</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="lobby" hidden>
-        <div>部屋コード：<span class="roomcode" id="roomCodeText"></span></div>
-        <div class="row">
-          <div class="qrbox"><canvas id="roomQr" width="168" height="168"></canvas></div>
-          <div class="note" id="roomHelp">このQRか下のURLを、対戦相手に送る（相手が読み取るとこの部屋に入る）。</div>
+        <div class="lobbyhead">
+          <div>部屋コード　<span class="roomcode" id="roomCodeText"></span></div>
+          <button class="btn" id="btnLeave" type="button">退室する</button>
         </div>
-        <div class="row"><input id="roomUrl" type="text" readonly style="flex:1;min-width:12em"><button class="btn" id="btnCopy" type="button">URLをコピー</button></div>
+        <div class="invite">
+          <div class="qrbox"><canvas id="roomQr" width="168" height="168"></canvas></div>
+          <div class="invite-text">
+            <div class="note">このQRを相手に読み取ってもらうか、下のURLを送ってください。相手が入ると、ここに表示されます。</div>
+            <div class="row"><input id="roomUrl" type="text" readonly aria-label="招待URL"><button class="btn" id="btnCopy" type="button">コピー</button><button class="btn" id="btnShare" type="button" hidden>共有</button></div>
+          </div>
+        </div>
         <div class="players" id="lobbyPlayers"></div>
-        <div class="row"><button class="btn primary" id="btnOnlineStart" type="button" disabled>バトル開始（部屋を作った人）</button></div>
+        <div class="row"><button class="btn primary" id="btnOnlineStart" type="button" disabled>バトル開始</button></div>
       </div>
       <div class="note" id="onlineMsg"></div>
     </div>
@@ -262,16 +296,46 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const NAMES = { A: '攻撃', C: '貯める', D: '防御' };
 
   // ---------- 素材 ----------
-  const IMG = (n) => `./src/img/character/Actor1_${n}.png`;   // SVアクターのシート（9列×6行、64px）
-  const FACE = './src/img/face/Actor1.png';                     // 顔グラ（4列×2行、144px）
-  const WEAPON = './src/img/Weapon/Weapons1.png';               // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
+  // 素材は「キー（src/ からの相対パス）」で持つ。AS(キー) が、素材パックから読み込んだ画像・音声のURLか、開発時の ./src/ のパスを返す。
+  const SRC = './src/';                                         // 素材の置き場所（開発時）
+  const PACK_CORE = 'assets/core.pack';                                          // 公開ページでは 'assets/core.pack'（ビルド時に差し替わる）
+  const PACK_BGM = 'assets/bgm.pack';                                           // 公開ページでは 'assets/bgm.pack'
+  window.PCB_ASSETS = window.PCB_ASSETS || {};
+  const AS = (key) => window.PCB_ASSETS[key] || (SRC + key);
+  const IMG = (n) => `img/character/Actor1_${n}.png`;            // SVアクターのシート（9列×6行、64px）
+  const FACE = 'img/face/Actor1.png';                            // 顔グラ（4列×2行、144px）
+  const WEAPON = 'img/Weapon/Weapons1.png';                      // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
   const WEAPON_ID = 2;                                           // 1=短剣、2=剣、3=フレイル、4=斧、5=ムチ、6=杖 ／ 7=弓…（MZのweaponImageId）
   const BATTLEBACKS = ['Grassland', 'Desert', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
-  const SE = { attack: './src/audio/se/Attack3.ogg', damage: './src/audio/se/Damage2.ogg', guard: './src/audio/se/Reflection.ogg',
-               charge: './src/audio/se/Powerup.ogg', drain: './src/audio/se/Absorb2.ogg',
-               sword: './src/audio/se/Sword1.ogg', blow: './src/audio/se/Blow1.ogg', dash: './src/audio/se/Evasion2.ogg' };
-  const BGM = './src/audio/bgm/03_Endless_Battle.ogg';
-  const ME = { win: './src/audio/me/Victory2.ogg', lose: './src/audio/me/Defeat1.ogg' };
+  const SE = { attack: 'audio/se/Attack3.ogg', damage: 'audio/se/Damage2.ogg', guard: 'audio/se/Reflection.ogg',
+               charge: 'audio/se/Powerup.ogg', drain: 'audio/se/Absorb2.ogg',
+               sword: 'audio/se/Sword1.ogg', blow: 'audio/se/Blow1.ogg', dash: 'audio/se/Evasion2.ogg' };
+  const BGM = 'audio/bgm/03_Endless_Battle.ogg';
+  const ME = { win: 'audio/me/Victory2.ogg', lose: 'audio/me/Defeat1.ogg' };
+
+  // ---- 素材パック（公開ページ用）----
+  // 公開ページでは、画像・音声を1つのパックにまとめて置く（リポジトリに元の画像・音声ファイルを置かないため）。
+  // 画面に出すだけで、元ファイルの形では置かない。パックは読み込み時にこの中で展開する。
+  const PACK_KEY = new TextEncoder().encode('PayCostBattle-pack-v1');
+  const MIME = { png: 'image/png', ogg: 'audio/ogg', js: 'text/javascript', wasm: 'application/wasm', efkefc: 'application/octet-stream' };
+  async function loadPack(url) {
+    if (!url) return false;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) return false;
+      const u8 = new Uint8Array(await r.arrayBuffer());
+      for (let i = 0; i < u8.length; i++) u8[i] ^= PACK_KEY[i % PACK_KEY.length];
+      const hl = new DataView(u8.buffer).getUint32(0);
+      const idx = JSON.parse(new TextDecoder().decode(u8.subarray(4, 4 + hl)));
+      const base = 4 + hl;
+      Object.keys(idx).forEach((key) => {
+        const off = idx[key][0], len = idx[key][1];
+        const ext = key.split('.').pop();
+        window.PCB_ASSETS[key] = URL.createObjectURL(new Blob([u8.subarray(base + off, base + off + len)], { type: MIME[ext] || 'application/octet-stream' }));
+      });
+      return true;
+    } catch (e) { return false; }
+  }
 
   // SVアクターのモーション（MZの並びに合わせる。1モーション3コマ、1行に3モーション）
   const MOTION = { walk: 0, wait: 1, chant: 2, guard: 3, damage: 4, evade: 5, thrust: 6, swing: 7, missile: 8,
@@ -283,12 +347,12 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   let muted = false, bgm = null, bgmOn = false;
   function playSE(src, vol = 0.8) {
     if (muted) return;
-    try { const a = new Audio(src); a.volume = vol; a.play().catch(() => {}); } catch (e) { /* 無視 */ }
+    try { const a = new Audio(AS(src)); a.volume = vol; a.play().catch(() => {}); } catch (e) { /* 無視 */ }
   }
   function startBGM() {
     if (bgmOn) return;
     try {
-      bgm = new Audio(BGM); bgm.loop = true; bgm.volume = 0.45; bgm.muted = muted;
+      bgm = new Audio(AS(BGM)); bgm.loop = true; bgm.volume = 0.45; bgm.muted = muted;
       bgm.play().then(() => { bgmOn = true; }).catch(() => {});
     } catch (e) { /* 無視 */ }
   }
@@ -311,7 +375,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'face' + (chars[idx] === n ? ' sel' : '');
       const col = (n - 1) % 4, row = Math.floor((n - 1) / 4);
-      b.style.backgroundImage = `url(${FACE})`;
+      b.style.backgroundImage = `url(${AS(FACE)})`;
       b.style.backgroundSize = '400% 200%';
       b.style.backgroundPosition = `${col * 100 / 3}% ${row * 100}%`;
       b.style.backgroundColor = `hsl(${n * 47 % 360} 55% 38%)`;   // 画像が無い時の代用色
@@ -347,7 +411,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // 背景：./src/img/battleback/<名前>.png（1000×740）。無ければCSSの簡易背景
   function setBg(name) {
-    const url = `./src/img/battleback/${name}.png`;
+    const url = AS(`img/battleback/${name}.png`);
     const im = new Image();
     im.onload = () => {
       const el = $('#bg1');
@@ -373,7 +437,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       this.weapon = this.el.querySelector('.weapon');
       this.ph = document.createElement('div'); this.ph.className = 'ph';
       this.el.querySelector('.body').appendChild(this.ph);
-      this.weapon.style.backgroundImage = `url(${WEAPON})`;
+      this.weapon.style.backgroundImage = `url(${AS(WEAPON)})`;   // 素材パックの展開後に、setActor で付け直す
       this.weapon.style.backgroundSize = `${576 * S}px ${384 * S}px`;
       this.motion = 'wait'; this.loop = true; this.frame = 0; this.timer = null; this.actor = 1;
       this.base = { x: parseFloat(this.el.style.left), y: parseFloat(this.el.style.top) };
@@ -381,14 +445,15 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     }
     setActor(n) {
       this.actor = n;
-      this.sprite.style.backgroundImage = `url(${IMG(n)})`;
+      this.weapon.style.backgroundImage = `url(${AS(WEAPON)})`;
+      this.sprite.style.backgroundImage = `url(${AS(IMG(n))})`;
       this.sprite.style.backgroundSize = `${576 * S}px ${384 * S}px`;
       // 素材が無い環境（公開ページなど）では、代用のキャラ表示にする
       this.ph.dataset.n = n; this.ph.style.setProperty('--ph', `hsl(${n * 47 % 360} 55% 48%)`);
       this.el.classList.remove('noart');
       const im = new Image();
       im.onerror = () => { if (this.actor === n) this.el.classList.add('noart'); };
-      im.src = IMG(n);
+      im.src = AS(IMG(n));
       this.setMotion('wait', true);
     }
     draw(frame) {
@@ -426,8 +491,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- Effekseer（本物のMZエフェクト） ----------
   // 1ユニット＝1px の正射影で、ステージ（816×480）にそのまま重ねる。
-  const FXFILES = { slash: './src/effect/SlashPhysical_MZ.efkefc', hit: './src/effect/HitPhysical_MZ.efkefc', power: './src/effect/Powerup1_MZ.efkefc' };
-  const TEXDIR = './src/effect/Texture/';
+  const FXFILES = { slash: 'effect/SlashPhysical_MZ.efkefc', hit: 'effect/HitPhysical_MZ.efkefc', power: 'effect/Powerup1_MZ.efkefc' };
+  const TEXDIR = 'effect/Texture/';
   const TEXNAMES = ['Particle100', 'Slash1', 'Circle', 'Fog', 'ParticleAlpha', 'ShockWaveRing1'];
   const FX_SCALE = 1.0;     // 読み込み時の倍率（等倍のまま。大きさは下の FXSCALE で再生時に決める）
   // 再生時の大きさ（1ユニット＝約1.0pxだと、MZのエフェクトは十数pxにしかならない。実測で、画面上で
@@ -453,7 +518,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
   async function probeTextures() {
     await Promise.all(TEXNAMES.map(async (n) => {
-      const url = `${TEXDIR}${n}.png`;
+      const key = `${TEXDIR}${n}.png`;
+      if (window.PCB_ASSETS[key]) { EFX.tex[n] = window.PCB_ASSETS[key]; return; }
+      const url = SRC + key;
       try {
         const r = await fetch(url, { method: 'HEAD' });
         if (r.ok) { EFX.tex[n] = url; return; }
@@ -468,7 +535,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     if (!gl) return;
     EFX.canvas = canvas; EFX.gl = gl;
     probeTextures().then(() => {
-      effekseer.initRuntime('./src/effect/effekseer.wasm', () => {
+      effekseer.initRuntime(AS('effect/effekseer.wasm'), () => {
         const ctx = effekseer.createContext();
         ctx.init(gl);
         // 既定のローダーは拡張子（.png/.jpg）で画像かどうかを見分けるため、代用テクスチャ（data URL）が画像として読まれない。
@@ -486,7 +553,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           const base = path.split('?')[0];
           const dot = base.lastIndexOf('.');
           const ext = dot >= 0 ? base.slice(dot).toLowerCase() : '';
-          if (path.startsWith('data:image') || ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
+          if (path.startsWith('data:image') || path.startsWith('blob:') || ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => onload(toPow2(img));
@@ -511,7 +578,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         const names = Object.keys(FXFILES);
         let left = names.length;
         names.forEach((k) => {
-          EFX.effects[k] = ctx.loadEffect(FXFILES[k], FX_SCALE,
+          EFX.effects[k] = ctx.loadEffect(AS(FXFILES[k]), FX_SCALE,
             () => { if (--left === 0) EFX.ready = true; },
             (m) => { console.warn('エフェクトの読み込みに失敗', k, m); if (--left === 0) EFX.ready = true; delete EFX.effects[k]; },
             redirect);
@@ -864,7 +931,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   });
   $('#btnMenu').addEventListener('click', () => {
     stopBGM(); busy = false;
-    if (mode === 'online') onlineLeave();
+    if (mode === 'online') onlineBackToEntry();
     $('#battle').hidden = true; $('#battle').style.display = 'none';
     $('#select').style.display = 'grid';
   });
@@ -1041,6 +1108,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     const api = ONLINE.api;
     ONLINE.code = code; ONLINE.started = false; ONLINE.nextShow = 1; ONLINE.myPick = null; ONLINE.resolving = false;
     if (ONLINE.unsub) ONLINE.unsub();
+    $('#onlineEntry').hidden = true;
     $('#lobby').hidden = false;
     $('#roomCodeText').textContent = code;
     const url = roomUrl(code);
@@ -1067,15 +1135,65 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
   function renderLobby(room) {
     const me = ONLINE.seat === 0 ? room.host : room.guest, op = ONLINE.seat === 0 ? room.guest : room.host;
-    $('#lobbyPlayers').innerHTML =
-      '<div>あなた：<b>' + esc(me ? me.name : '') + '</b>（キャラ' + (me ? me.char : '') + '）' + (ONLINE.seat === 0 ? '　[ホスト]' : '') + '</div>' +
-      '<div>相手：<b>' + (op ? esc(op.name) : '…（入室待ち）') + '</b>' + (op ? '（キャラ' + op.char + '）' : '') + '</div>';
+    renderPlayers(me, op, room);
     const canStart = ONLINE.seat === 0 && !!room.guest && room.phase === 'lobby';
     $('#btnOnlineStart').disabled = !canStart;
     $('#btnOnlineStart').textContent = ONLINE.seat === 0 ? 'バトル開始' : 'ホストが開始するのを待っています';
     if (room.phase === 'lobby') onMsg(room.guest ? (ONLINE.seat === 0 ? '相手が入りました。「バトル開始」を押してください。' : '入室しました。ホストの開始を待っています。') : '相手の入室を待っています…');
   }
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // 顔グラ（素材が無い時は色だけ）
+  function faceCss(n) {
+    const col = (n - 1) % 4, row = Math.floor((n - 1) / 4);
+    return `background-image:url(${AS(FACE)});background-size:400% 200%;background-position:${col * 100 / 3}% ${row * 100}%;background-color:hsl(${n * 47 % 360} 55% 38%)`;
+  }
+  // ロビーの参加者表示。入力欄は作り直さない（名前を打っている最中に消えないように）
+  function renderPlayers(me, op, room) {
+    const box = $('#lobbyPlayers');
+    if (!box.dataset.built) {
+      box.innerHTML =
+        '<div class="pcard me"><div class="avatar" id="meAvatar"></div><div class="pinfo"><div class="plabel" id="meLabel"></div>' +
+        '<div class="nameedit"><input id="lobbyName" type="text" maxlength="12" aria-label="名前"><button class="btn" id="btnRename" type="button">名前を変更</button></div></div></div>' +
+        '<div class="pcard op"><div class="avatar" id="opAvatar"></div><div class="pinfo"><div class="plabel">相手</div><div class="pname" id="opName"></div></div></div>';
+      box.dataset.built = '1';
+      $('#btnRename').addEventListener('click', onlineRename);
+      $('#lobbyName').addEventListener('keydown', (e) => { if (e.key === 'Enter') onlineRename(); });
+    }
+    const inp = $('#lobbyName');
+    if (document.activeElement !== inp) inp.value = me ? me.name : '';
+    const editable = room.phase === 'lobby';
+    inp.disabled = !editable; $('#btnRename').disabled = !editable;
+    $('#meLabel').textContent = 'あなた' + (ONLINE.seat === 0 ? '（ホスト）' : '') + (editable ? '' : '　※対戦中は名前を変えられません');
+    $('#meAvatar').setAttribute('style', faceCss(me ? me.char : 1));
+    $('#opName').textContent = op ? op.name : '入室を待っています…';
+    $('#opAvatar').setAttribute('style', op ? faceCss(op.char) : 'background:#1a2250');
+  }
+  // 入室後でも、ロビーの間は名前を変えられる
+  async function onlineRename() {
+    const v = ($('#lobbyName').value || '').trim().slice(0, 12);
+    if (!v) { onMsg('名前を入れてください'); return; }
+    const seat = ONLINE.seat;
+    try {
+      await ONLINE.api.mutate(ONLINE.code, (rm) => {
+        if (rm.phase !== 'lobby') return null;
+        const p = seat === 0 ? rm.host : rm.guest;
+        if (!p) return null;
+        p.name = v;
+        return rm;
+      });
+      ONLINE.name = v; $('#onName').value = v;
+      onMsg('名前を「' + v + '」に変更しました');
+    } catch (e) { onMsg('名前を変更できませんでした：' + e.message); }
+  }
+  // 部屋を出て、入室前の画面に戻る
+  function onlineBackToEntry() {
+    onlineLeave();
+    ONLINE.code = '';
+    $('#lobby').hidden = true; $('#onlineEntry').hidden = false;
+    const box = $('#lobbyPlayers'); box.innerHTML = ''; delete box.dataset.built;
+    onMsg('');
+  }
 
   async function onlineStart() {
     try {
@@ -1218,6 +1336,13 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     }).catch(() => {});
   }
 
+  $('#btnLeave').addEventListener('click', onlineBackToEntry);
+  if (navigator.share) {
+    $('#btnShare').hidden = false;
+    $('#btnShare').addEventListener('click', () => {
+      navigator.share({ title: 'PayCostBattle', text: '一緒に対戦しよう！部屋コード ' + ONLINE.code, url: $('#roomUrl').value }).catch(() => {});
+    });
+  }
   $('#btnCreateRoom').addEventListener('click', onlineCreate);
   $('#btnJoinRoom').addEventListener('click', () => onlineJoin());
   $('#btnOnlineStart').addEventListener('click', onlineStart);
@@ -1245,8 +1370,25 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     setTimeout(() => { refreshSelect(); onMsg('名前を入れて「部屋に参加」を押してください（部屋コード ' + code.toUpperCase() + '）'); }, 0);
   })();
 
+  // 素材（公開ページでは素材パック）を読み込んでから、顔グラ・エフェクトを用意する
+  async function bootAssets() {
+    const ok = await loadPack(PACK_CORE);
+    if (ok) {
+      if (typeof effekseer === 'undefined' && window.PCB_ASSETS['effect/effekseer.min.js']) {
+        await new Promise((res) => {
+          const s = document.createElement('script');
+          s.src = window.PCB_ASSETS['effect/effekseer.min.js']; s.onload = res; s.onerror = res;
+          document.head.appendChild(s);
+        });
+      }
+      buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
+      if (PACK_BGM) loadPack(PACK_BGM);   // BGMは大きいので、あとから裏で読み込む
+    }
+    initFX();
+  }
+
   // 初期化
-  initFX();
+  bootAssets();
   chars = [1, 5];
   buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
   refreshSelect();
