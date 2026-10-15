@@ -1382,7 +1382,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         });
       }
       buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
-      if (PACK_BGM) loadPack(PACK_BGM);   // BGMは大きいので、あとから裏で読み込む
+      // BGMは大きいので、あとから裏で読み込む。読み込めた時点で、すでに開始済みなら鳴らし始める
+      if (PACK_BGM) loadPack(PACK_BGM).then((done) => {
+        if (done && $('#startOverlay').style.display === 'none' && !bgmOn) startBGM();
+      });
     }
     initFX();
   }
