@@ -28,7 +28,7 @@ h1 { font-size: 1.1rem; margin: 0; letter-spacing: .04em; }
 .top .tools { display: flex; gap: 6px; flex-wrap: wrap; }
 button, select { font: inherit; color: inherit; }
 .btn { background: var(--win-bg); border: 1px solid var(--win-line); border-radius: 8px; padding: 6px 12px; min-height: 36px; cursor: pointer; }
-.btn:hover { background: rgba(40, 56, 130, .95); }
+@media (hover: hover) and (pointer: fine) { .btn:hover:not(:disabled) { background: rgba(40, 56, 130, .95); } }
 .btn:disabled { opacity: .4; cursor: not-allowed; }
 .btn.primary { background: #3a5bd9; border-color: #fff; font-weight: 700; }
 select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--win-line); border-radius: 8px; padding: 6px 10px; min-height: 36px; }
@@ -128,7 +128,8 @@ select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--w
 .cmd .name { font-weight: 800; font-size: 1.5rem; }
 .cmd .info { font-size: .95rem; color: #c9d3f2; line-height: 1.4; }
 .cmd.A .name { color: var(--atk); } .cmd.C .name { color: var(--chg); } .cmd.D .name { color: var(--def); }
-.cmd:hover:not(:disabled) { background: rgba(60, 84, 190, .95); }
+/* タップした位置にボタンが残って「選ばれたように」見えないよう、hoverでは色を変えない（押した瞬間だけ変える） */
+.cmd:active:not(:disabled) { background: rgba(60, 84, 190, .95); }
 .cmd.sel { outline: 3px solid #ffd54a; }
 .cmd:disabled { opacity: .45; cursor: not-allowed; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -178,6 +179,22 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 .nameedit { display: flex; gap: 6px; flex-wrap: wrap; }
 .nameedit input { flex: 1; min-width: 8em; }
 .rulebox { display: grid; gap: 8px; padding: 8px 10px; border: 1px dashed var(--win-line); border-radius: 10px; }
+/* ラベルと入力欄を、折り返しで離れないようにひとまとめにする */
+.field { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.field select, .field input { min-width: 0; }
+.litenote { padding: 4px 8px; border-left: 3px solid #ffd54a; }
+/* 取れないキャラ（相手が選択中）*/
+.face.taken { opacity: .35; cursor: not-allowed; filter: grayscale(.8); }
+.face.taken span { background: rgba(0, 0, 0, .6); padding: 0 4px; border-radius: 4px; }
+.face.rand { display: grid; place-items: center; font-size: 1.6rem; font-weight: 800; background: repeating-linear-gradient(45deg, #1a2250 0 10px, #222c66 10px 20px); }
+.face.rand span { position: static; font-size: .72rem; text-shadow: none; }
+/* 暗転（再戦・新しい対戦の切り替え） */
+.fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity .45s ease; z-index: 9; display: grid; place-items: center; color: #fff; font-size: 1.6rem; font-weight: 800; letter-spacing: .2em; }
+.fade.on { opacity: 1; pointer-events: auto; }
+/* ボタンを押した後の「処理中」表示 */
+.btn.working { position: relative; }
+.btn.working::after { content: ''; display: inline-block; width: .9em; height: .9em; margin-left: .5em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -.1em; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 /* display を指定した要素でも、hidden 属性で確実に隠れるようにする */
 [hidden] { display: none !important; }
 @media (max-width: 560px) { .entrycards { grid-template-columns: 1fr; } .invite { grid-template-columns: 1fr; justify-items: start; } }
@@ -189,28 +206,32 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     <h1>PayCostBattle（オンライン対戦）</h1>
     <div class="tools">
       <button class="btn" id="btnSpeed" type="button">演出：通常</button>
-      <button class="btn" id="btnLite" type="button" title="回線や端末が重い時用。エフェクトの読み込みやBGMを止めて、画面効果を減らします">軽量：OFF</button>
+      <button class="btn" id="btnLite" type="button" title="回線や端末が重い時用。BGM・エフェクト・画面フラッシュを止めて、軽くします">軽量モード：OFF</button>
       <button class="btn" id="btnMute" type="button">音：ON</button>
       <button class="btn" id="btnMenu" type="button">メニューに戻る</button>
     </div>
   </div>
+  <div class="note litenote" id="litenote" hidden>軽量モード中：BGMとエフェクト（Effekseer）を読み込まず、画面フラッシュ・集中線・ズームも止めています。重い時の保険です。</div>
 
   <!-- 選択画面 -->
   <section id="select" class="window">
     <div class="row">
-      <label for="mode">モード</label>
-      <select id="mode">
-        <option value="cpu">CPUと対戦</option>
-        <option value="two">2人で対戦（1台で同時入力）</option>
-        <option value="hot">2人で対戦（交代入力）</option>
-        <option value="online">オンライン対戦（QRで部屋に招待）</option>
-      </select>
-      <label for="diff" id="diffLabel">CPUの強さ</label>
-      <select id="diff">
-        <option value="easy">かんたん</option>
-        <option value="normal" selected>ふつう</option>
-        <option value="hard">つよい</option>
-      </select>
+      <span class="field">
+        <label for="mode">モード</label>
+        <select id="mode">
+          <option value="cpu">CPUと対戦</option>
+          <option value="hot">2人で対戦（1台を交代で）</option>
+          <option value="online">オンライン対戦（QRで部屋に招待）</option>
+        </select>
+      </span>
+      <span class="field" id="diffField">
+        <label for="diff">CPUの強さ</label>
+        <select id="diff">
+          <option value="easy">かんたん</option>
+          <option value="normal" selected>ふつう</option>
+          <option value="hard">つよい</option>
+        </select>
+      </span>
     </div>
     <div class="cols">
       <div><h2 id="p1Title">あなたのキャラ</h2><div class="faces" id="faces1"></div></div>
@@ -219,8 +240,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     <div id="onlinePanel" hidden>
       <div id="onlineEntry">
         <div class="row">
-          <label for="onName">あなたの名前</label>
-          <input id="onName" type="text" maxlength="12" placeholder="例：たろう" autocomplete="nickname">
+          <span class="field">
+            <label for="onName">あなたの名前</label>
+            <input id="onName" type="text" maxlength="12" placeholder="例：たろう" autocomplete="nickname">
+          </span>
         </div>
         <div class="entrycards">
           <div class="ecard">
@@ -254,49 +277,56 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         <div class="rulebox">
           <div>ルール：<b id="ruleSummary"></b></div>
           <div class="row" id="hostRules" hidden>
-            <label for="lobbyHp">初期HP</label>
-            <select id="lobbyHp"><option value="50">50</option><option value="100">100</option><option value="150">150</option><option value="200">200</option></select>
-            <label for="lobbyCrit">クリティカル</label>
-            <select id="lobbyCrit"><option value="on">あり</option><option value="off">なし</option></select>
+            <span class="field"><label for="lobbyHp">初期HP</label>
+              <select id="lobbyHp"><option value="50">50</option><option value="100">100</option><option value="150">150</option><option value="200">200</option></select></span>
+            <span class="field"><label for="lobbyCrit">クリティカル</label>
+              <select id="lobbyCrit"><option value="on">あり</option><option value="off">なし</option></select></span>
           </div>
         </div>
         <div class="row"><button class="btn primary" id="btnOnlineStart" type="button" disabled>バトル開始</button></div>
       </div>
       <div class="note" id="onlineMsg"></div>
     </div>
-    <div class="row">
-      <label for="bgsel">バトル背景</label>
-      <select id="bgsel">
-        <option value="random">ランダム</option>
-        <option value="Grassland">草原</option>
-        <option value="Desert">砂漠</option>
-        <option value="Wood1">森</option>
-      </select>
+    <div class="row" id="bgRow">
+      <span class="field">
+        <label for="bgsel">バトル背景</label>
+        <select id="bgsel">
+          <option value="random">ランダム</option>
+          <option value="Grassland">草原</option>
+          <option value="Desert">砂漠</option>
+          <option value="Wood1">森</option>
+        </select>
+      </span>
     </div>
     <div class="row" id="ruleRow">
-      <label for="hpsel">初期HP</label>
-      <select id="hpsel">
-        <option value="50">50</option>
-        <option value="100" selected>100</option>
-        <option value="150">150</option>
-        <option value="200">200</option>
-      </select>
-      <label for="critsel">クリティカル</label>
-      <select id="critsel">
-        <option value="on" selected>あり</option>
-        <option value="off">なし</option>
-      </select>
+      <span class="field">
+        <label for="hpsel">初期HP</label>
+        <select id="hpsel">
+          <option value="50">50</option>
+          <option value="100" selected>100</option>
+          <option value="150">150</option>
+          <option value="200">200</option>
+        </select>
+      </span>
+      <span class="field">
+        <label for="critsel">クリティカル</label>
+        <select id="critsel">
+          <option value="on" selected>あり</option>
+          <option value="off">なし</option>
+        </select>
+      </span>
     </div>
-    <div class="row">
+    <div class="row" id="startRow">
       <button class="btn primary" id="btnStart" type="button">バトル開始</button>
-      <span class="note">ルールは、戦闘画面の「あそびかた」で確認できます。</span>
       <span class="note" id="loadStatus"></span>
     </div>
+    <div class="note">動きが重い時は、上の「軽量モード」を押すと、BGM・エフェクト・画面フラッシュを止めて軽くなります（ルールの説明は、バトル画面の「あそびかた」）。</div>
   </section>
 
   <!-- 戦闘画面 -->
   <div id="battle" hidden style="display:none;gap:10px;">
     <div class="stage-wrap" id="stageWrap">
+      <div class="fade" id="fade" aria-hidden="true"></div>
       <div class="stage" id="stage">
         <div class="bg-fallback" id="bgFallback"></div>
         <div class="bg1" id="bg1"></div>
@@ -344,7 +374,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const PACK_BG = 'assets/bg-';                                            // 公開ページでは 'assets/bg-'（背景は 'assets/bg-<名前>.pack' を、使う分だけ読む）
   const FX_JS = 'assets/effekseer.min.js';                                              // 公開ページでは 'assets/effekseer.min.js'（Effekseerのランタイム。MITライセンスの生ファイル）
   const FX_WASM = 'assets/effekseer.wasm';                                            // 公開ページでは 'assets/effekseer.wasm'
-  const PACK_BGM = 'assets/bgm.pack';                                           // 公開ページでは 'assets/bgm.pack'
+  const PACK_BGM = 'assets/';                                           // 公開ページでは 'assets/'（BGMは 'assets/bgm-<曲名>.pack' を、選ばれた1曲だけ読む）
   // 軽量モード：エフェクトのランタイム・BGMを読み込まず、画面効果を減らす（回線や端末が弱い時用）。
   // 初回は、通信が遅い／データセーバー／端末が非力そうなら自動でオン。ボタンでいつでも切り替えられる。
   let lite = false;
@@ -365,7 +395,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
                charge: 'audio/se/Powerup.ogg', drain: 'audio/se/Absorb2.ogg',
                sword: 'audio/se/Sword1.ogg', blow: 'audio/se/Blow1.ogg', dash: 'audio/se/Evasion2.ogg' };
   const BGM = 'audio/bgm/03_Endless_Battle.ogg';
-  const ME = { win: 'audio/me/Victory2.ogg', lose: 'audio/me/Defeat1.ogg' };
+  const ME = { win: 'audio/me/Victory2.ogg', lose: 'audio/me/Defeat1.ogg', draw: 'audio/me/Gag.ogg' };
 
   // ---- 素材パック（公開ページ用）----
   // 公開ページでは、画像・音声を1つのパックにまとめて置く（リポジトリに元の画像・音声ファイルを置かないため）。
@@ -428,19 +458,76 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const CELL = 64 * S;
 
   // ---------- 音 ----------
-  let muted = false, bgm = null, bgmOn = false;
+  let muted = false;
   function playSE(src, vol = 0.8) {
     if (muted) return;
     try { const a = new Audio(AS(src)); a.volume = vol; a.play().catch(() => {}); } catch (e) { /* 無視 */ }
   }
-  function startBGM() {
-    if (bgmOn || lite) return;
-    try {
-      bgm = new Audio(AS(BGM)); bgm.loop = true; bgm.volume = 0.45; bgm.muted = muted;
-      bgm.play().then(() => { bgmOn = true; }).catch(() => {});
-    } catch (e) { /* 無視 */ }
+
+  // ---- BGM：OGGのループタグ（LOOPSTART／LOOPLENGTH。ツクールMZの形式）を読んで、ループ位置を守って繰り返す ----
+  // Web Audio で曲を丸ごと展開して、loopStart／loopEnd を指定して再生する。展開すると数十MBのメモリを使うので、軽量モードでは使わない。
+  const BGM_LIST = /*BGM_LIST*/ [{"key":"audio/bgm/03_Endless_Battle.ogg","pack":"bgm-03_Endless_Battle.pack","size":4630395},{"key":"audio/bgm/Battle3_MZ.ogg","pack":"bgm-Battle3_MZ.pack","size":745670},{"key":"audio/bgm/Battledarkfnt3_MVT.ogg","pack":"bgm-Battledarkfnt3_MVT.pack","size":791018}];
+  let actx = null, bgmGain = null, bgmSrc = null, bgmData = null, bgmOn = false, bgmToken = 0;
+  function audioCtx() {
+    if (!actx) {
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (!C) return null;
+      actx = new C();
+      bgmGain = actx.createGain(); bgmGain.gain.value = muted ? 0 : 0.45; bgmGain.connect(actx.destination);
+    }
+    return actx;
   }
-  function stopBGM() { try { if (bgm) { bgm.pause(); bgm.currentTime = 0; } } catch (e) {} bgmOn = false; }
+  // OGGのループタグとサンプルレートを読む。タグはコメントヘッダ（先頭付近）に、"LOOPSTART=数字" の形で入っている
+  function readLoopTags(ab) {
+    const u8 = new Uint8Array(ab, 0, Math.min(ab.byteLength, 65536));
+    let s = '';
+    for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    const num = (name) => { const m = new RegExp(name + '=(\\d+)', 'i').exec(s); return m ? parseInt(m[1], 10) : null; };
+    const i = s.indexOf('\x01vorbis');
+    const rate = i >= 0 ? (u8[i + 12] | (u8[i + 13] << 8) | (u8[i + 14] << 16) | (u8[i + 15] * 16777216)) : 44100;
+    return { start: num('LOOPSTART'), length: num('LOOPLENGTH'), rate: rate || 44100 };
+  }
+  // 弱い環境では、大きい曲を避ける
+  function pickBgm() {
+    const slow = lite || (() => { const c = navigator.connection || {}; return !!(c.saveData || /(^|-)(2g|3g)$/.test(c.effectiveType || '')); })();
+    const pool = BGM_LIST.filter((e) => !slow || e.size < 2 * 1024 * 1024);
+    const use = pool.length ? pool : BGM_LIST;
+    return use[Math.floor(Math.random() * use.length)];
+  }
+  async function prepareBgm(entry, token) {
+    if (PACK_BGM) { const ok = await loadPack(PACK_BGM + entry.pack, null, true); if (!ok) return null; }
+    const ctx = audioCtx();
+    if (!ctx) return null;
+    const ab = await (await fetch(AS(entry.key))).arrayBuffer();
+    if (token !== bgmToken) return null;
+    const tags = readLoopTags(ab);
+    const buf = await new Promise((res, rej) => ctx.decodeAudioData(ab.slice(0), res, rej));
+    return { buf, tags };
+  }
+  function startBGM() {
+    if (bgmOn || lite || !bgmData || !actx) return;
+    try { actx.resume(); } catch (e) { /* 無視 */ }
+    const { buf, tags } = bgmData;
+    const src = actx.createBufferSource();
+    src.buffer = buf; src.loop = true;
+    if (tags.start != null && tags.length != null && tags.length > 0) {
+      // タグのサンプル位置を秒に直す（元のサンプルレートで割る。展開後の長さを超えないようにする）
+      const ls = tags.start / tags.rate, le = Math.min(buf.duration, (tags.start + tags.length) / tags.rate);
+      if (le > ls) { src.loopStart = ls; src.loopEnd = le; }
+    }
+    src.connect(bgmGain); src.start(0);
+    bgmSrc = src; bgmOn = true;
+  }
+  function stopBGM() {
+    try { if (bgmSrc) { bgmSrc.stop(); bgmSrc.disconnect(); } } catch (e) { /* 無視 */ }
+    bgmSrc = null; bgmOn = false;
+  }
+  function setMuted(m) {
+    muted = m;
+    if (bgmGain) bgmGain.gain.value = muted ? 0 : 0.45;
+  }
+  // iOSなど、タップの中でないと音が出ない環境のため、画面を触った時に再開を試みる
+  document.addEventListener('pointerdown', () => { if (actx && actx.state === 'suspended') actx.resume().catch(() => {}); }, { passive: true });
 
   // ---------- 状態 ----------
   const cfg = PCB.makeConfig();
@@ -463,32 +550,58 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const nameOf = (i) => mode === 'online' ? onlineNames[i] : mode === 'cpu' ? (i === 0 ? 'あなた' : 'CPU') : (i === 0 ? 'プレイヤー1' : 'プレイヤー2');
 
   // ---------- 選択画面 ----------
+  let cpuPick = 0;                      // CPU戦のCPUのキャラ。0＝ランダム（バトルごとに変わる）
+  const randomOther = (n) => { let r; do { r = 1 + Math.floor(Math.random() * 8); } while (r === n); return r; };
+  // そのキャラ(n)を、プレイヤー(idx)が選べないか（同じキャラは選べない）
+  function isTaken(idx, n) {
+    if (mode === 'hot') return chars[1 - idx] === n;
+    if (mode === 'cpu') return idx === 1 && chars[0] === n;
+    if (mode === 'online') return idx === 0 && ONLINE.oppChar === n;
+    return false;
+  }
   function buildFaces(el, idx) {
     el.innerHTML = '';
+    const cpuSide = idx === 1 && mode === 'cpu';
+    if (cpuSide) {   // CPUのキャラ：ランダム（バトルごとに変わる）
+      const r = document.createElement('button');
+      r.type = 'button'; r.className = 'face rand' + (cpuPick === 0 ? ' sel' : '');
+      r.innerHTML = '？<span>ランダム</span>';
+      r.addEventListener('click', () => { cpuPick = 0; buildFaces($('#faces2'), 1); });
+      el.appendChild(r);
+    }
     for (let n = 1; n <= 8; n++) {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'face' + (chars[idx] === n ? ' sel' : '');
+      const taken = isTaken(idx, n);
+      const selected = cpuSide ? cpuPick === n : chars[idx] === n;
+      b.type = 'button'; b.className = 'face' + (selected ? ' sel' : '') + (taken ? ' taken' : '');
       const col = (n - 1) % 4, row = Math.floor((n - 1) / 4);
       b.style.backgroundImage = `url(${AS(FACE)})`;
       b.style.backgroundSize = '400% 200%';
       b.style.backgroundPosition = `${col * 100 / 3}% ${row * 100}%`;
       b.style.backgroundColor = `hsl(${n * 47 % 360} 55% 38%)`;   // 画像が無い時の代用色
-      b.setAttribute('aria-label', `キャラ${n}`);
-      b.innerHTML = `<span>${n}</span>`;
-      b.addEventListener('click', () => { chars[idx] = n; buildFaces($('#faces' + (idx + 1)), idx); });
+      b.setAttribute('aria-label', `キャラ${n}${taken ? '（相手が選択中）' : ''}`);
+      b.innerHTML = `<span>${taken ? '選択中' : n}</span>`;
+      b.disabled = taken;
+      b.addEventListener('click', () => {
+        if (cpuSide) { cpuPick = n; chars[1] = n; } else { chars[idx] = n; }
+        // 相手側の「選べないキャラ」も変わるので、両方作り直す
+        buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
+      });
       el.appendChild(b);
     }
   }
   function refreshSelect() {
     mode = $('#mode').value; diff = $('#diff').value;
     const cpu = mode === 'cpu', online = mode === 'online';
-    $('#diff').hidden = !cpu; $('#diffLabel').hidden = !cpu;
+    $('#diffField').hidden = !cpu;
     $('#p1Title').textContent = (cpu || online) ? 'あなたのキャラ' : 'プレイヤー1（左側）のキャラ';
-    $('#p2Title').textContent = cpu ? 'CPUのキャラ' : 'プレイヤー2（右側）のキャラ';
+    $('#p2Title').textContent = cpu ? 'CPUのキャラ（ランダムなら毎回変わる）' : 'プレイヤー2（右側）のキャラ';
     $('#faces2').parentElement.style.display = online ? 'none' : '';
     $('#onlinePanel').hidden = !online;
-    $('#btnStart').parentElement.style.display = online ? 'none' : '';
-    $('#bgsel').parentElement.style.display = online ? 'none' : '';
+    $('#startRow').style.display = online ? 'none' : '';
+    $('#bgRow').style.display = online ? 'none' : '';
+    if (mode === 'hot' && chars[0] === chars[1]) chars[1] = randomOther(chars[0]);   // 同じキャラは選べない
+    buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
   }
   $('#mode').addEventListener('change', refreshSelect);
   $('#diff').addEventListener('change', refreshSelect);
@@ -860,7 +973,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       b.disabled = busy || state.over || !ok.includes(c);
       const reason = !ok.includes(c) ? (c === 'D' ? '貯めた次は防御できない' : '防御した次は貯められない') : info(c, i);
       b.innerHTML = `<span class="name">${NAMES[c]}</span><span class="info">${reason}</span>`;
-      b.addEventListener('click', () => onPick(c));
+      b.addEventListener('click', () => { b.blur(); onPick(c); });   // フォーカスを外す（次の人の画面に、選択の見た目が残らないように）
       g.appendChild(b);
     });
     return g;
@@ -875,16 +988,6 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     } else if (mode === 'cpu') {
       w.appendChild(h(`${nameOf(0)}の手を選ぶ（CPUも同時に選びます）`));
       w.appendChild(cmdGroup(0, (c) => runRound([c, PCB.cpuChoose(state, 1, diff, cfg)]), null));
-    } else if (mode === 'two') {
-      const pr = document.createElement('div'); pr.className = 'pair';
-      [0, 1].forEach((i) => {   // 左側（P1）を左、右側（P2）を右に並べる
-        const box = document.createElement('div');
-        box.appendChild(h(`${nameOf(i)}（${i === 0 ? '右' : '左'}側）${pick[i] ? '：決定済み' : ''}`));
-        box.appendChild(pick[i] ? lockedBox() : cmdGroup(i, (c) => { pick[i] = c; if (pick[0] && pick[1]) runRound(pick.slice()); else renderCommands(); }, null));
-        pr.appendChild(box);
-      });
-      w.appendChild(pr);
-      w.appendChild(Object.assign(document.createElement('div'), { className: 'note', textContent: '選んだ手は、2人とも決めるまで相手に見せません（画面は見ないでね）。' }));
     } else {
       if (phase === 'p1') {
         w.appendChild(h(`${nameOf(0)}の手を選ぶ（${nameOf(1)}は見ないでください）`));
@@ -1023,7 +1126,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     if (res === 'draw') {
       text = 'DRAW'; cls = 'draw';
       B.forEach((b) => b.setMotion('dead', false));
-      playSE(ME.lose, 0.8);
+      stopBGM(); playSE(ME.draw, 0.9);                         // 引き分けは専用のME（Gag）
     } else {
       const w = res, l = 1 - res;
       B[l].setMotion('dying', false);
@@ -1038,14 +1141,26 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     busy = false; renderCommands();
   }
   function playMEwin(win) {
-    if (bgm) { try { bgm.pause(); } catch (e) {} bgmOn = false; }
+    stopBGM();
     playSE(win ? ME.win : ME.lose, 0.9);
   }
 
   // ---------- 開始・再開 ----------
+  // 暗転（再戦・新しい対戦の切り替え）。真っ暗にしてから中身を入れ替え、明るく戻す
+  async function transition(fn, label) {
+    const f = $('#fade');
+    f.textContent = label || ''; f.classList.add('on');
+    await new Promise((r) => setTimeout(r, 480));
+    try { await fn(); } finally {
+      await new Promise((r) => setTimeout(r, 200));
+      f.classList.remove('on');
+    }
+  }
   function startBattle() {
     refreshSelect();
     applyRules();
+    // CPU戦：CPUのキャラは、ランダム指定ならバトルごとに変える（自分と同じキャラにはならない）
+    if (mode === 'cpu') chars[1] = (cpuPick && cpuPick !== chars[0]) ? cpuPick : randomOther(chars[0]);
     state = PCB.newState(cfg);
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');
@@ -1071,7 +1186,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   });
   $('#btnAgain').addEventListener('click', () => {
     if (mode === 'online') { onlineRematch(); return; }
-    startBattle(); $('#startOverlay').style.display = 'none'; startBGM();
+    // 一度暗転してから、新しいバトル（CPUのキャラ・背景・曲も変わる）に切り替える
+    transition(() => { startBattle(); $('#startOverlay').style.display = 'none'; }, 'NEXT BATTLE');
   });
   $('#btnMenu').addEventListener('click', () => {
     stopBGM(); busy = false;
@@ -1081,22 +1197,22 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   });
   // 軽量モードの切り替え（次に開いた時も保持する）
   function showLite() {
-    $('#btnLite').textContent = lite ? '軽量：ON' : '軽量：OFF';
+    $('#btnLite').textContent = lite ? '軽量モード：ON' : '軽量モード：OFF';
+    $('#litenote').hidden = !lite;
     document.body.classList.toggle('lite', lite);
   }
   $('#btnLite').addEventListener('click', () => {
     lite = !lite;
     try { localStorage.setItem('pcb_lite', lite ? '1' : '0'); } catch (e) { /* 無視 */ }
     showLite();
-    if (lite) stopBGM();
-    else { preloadBgm(); }
+    if (lite) { stopBGM(); bgmToken++; bgmData = null; }
+    else if (state) { preloadBgm(); }
     const msgBox = $('#onlineMsg');
-    if (msgBox && mode === 'online') msgBox.textContent = lite ? '軽量モード：エフェクトとBGMを止めました' : '軽量モードを解除しました（エフェクトは、ページを開き直すと使えます）';
+    if (msgBox && mode === 'online') msgBox.textContent = lite ? '軽量モードにしました：BGMとエフェクトを止めます' : '軽量モードを解除しました（エフェクトは、ページを開き直すと使えます）';
   });
   showLite();
   $('#btnMute').addEventListener('click', () => {
-    muted = !muted; $('#btnMute').textContent = muted ? '音：OFF' : '音：ON';
-    if (bgm) bgm.muted = muted;
+    setMuted(!muted); $('#btnMute').textContent = muted ? '音：OFF' : '音：ON';
   });
   $('#btnSpeed').addEventListener('click', () => {
     speed = speed === 1 ? 0.5 : 1; $('#btnSpeed').textContent = speed === 1 ? '演出：通常' : '演出：はやい';
@@ -1109,7 +1225,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 部屋ごとに1つのドキュメントを共有する。ホスト（部屋を作った人）が結果を計算して書き込み、双方がそれを演出する。
   // 手は「ハッシュを先に出し、全員分そろってから中身を公開する」ので、相手の手を見てから選ぶことはできない。
   const ONLINE = { api: null, seat: -1, code: '', unsub: null, room: null, startedRound: 0, nextShow: 1,
-                   myPick: null, name: '', myChar: 1, qrLib: null, resolving: false, dirty: false, started: false };
+                   myPick: null, name: '', myChar: 1, qrLib: null, resolving: false, dirty: false, started: false,
+                   oppChar: 0, fading: false };
 
   // 同期的なSHA-256（http接続でも動くように、SubtleCryptoを使わない）
   const sha256 = (() => {
@@ -1232,9 +1349,23 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
 
   // ----- 部屋に入る・作る -----
+  // 部屋を作る／参加する の最中は、ボタンを「処理中」表示にして、連続で押せないようにする
+  let entryBusy = false;
+  function setEntryBusy(kind) {
+    const bc = $('#btnCreateRoom'), bj = $('#btnJoinRoom');
+    entryBusy = !!kind;
+    bc.disabled = bj.disabled = !!kind;
+    bc.classList.toggle('working', kind === 'create');
+    bj.classList.toggle('working', kind === 'join');
+    bc.textContent = kind === 'create' ? '部屋を作っています…' : '部屋を作る';
+    bj.textContent = kind === 'join' ? '参加しています…' : '参加する';
+    $('#roomInput').disabled = !!kind; $('#onName').disabled = !!kind;
+  }
   async function onlineCreate() {
+    if (entryBusy) return;
+    setEntryBusy('create');
     try {
-      onMsg('接続中…');
+      onMsg('部屋を作っています。数秒かかることがあります…');
       const api = await fbInit();
       const name = ($('#onName').value || 'プレイヤー').trim().slice(0, 12);
       ONLINE.name = name; ONLINE.myChar = chars[0];
@@ -1248,24 +1379,33 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       await api.create(code, room);
       await onlineEnter(code);
     } catch (e) { onMsg('部屋を作れませんでした：' + e.message); }
+    finally { setEntryBusy(null); }
   }
   async function onlineJoin(codeIn) {
+    if (entryBusy) return;
+    const code = (codeIn || $('#roomInput').value || '').trim().toUpperCase();
+    if (!code) { onMsg('部屋コードを入れてください'); return; }
+    setEntryBusy('join');
     try {
-      const code = (codeIn || $('#roomInput').value || '').trim().toUpperCase();
-      if (!code) { onMsg('部屋コードを入れてください'); return; }
-      onMsg('接続中…');
+      onMsg('部屋 ' + code + ' に参加しています。数秒かかることがあります…');
       const api = await fbInit();
       const name = ($('#onName').value || 'プレイヤー').trim().slice(0, 12);
       ONLINE.name = name; ONLINE.myChar = chars[0];
+      let joinedChar = ONLINE.myChar;
       await api.mutate(code, (room) => {
         if (room.host.uid === api.uid) return null;                                   // 自分の部屋（再入室）
         if (room.guest && room.guest.uid === api.uid) return null;                    // 再入室
         if (room.guest) throw new Error('この部屋は満員です');
-        room.guest = { uid: api.uid, name, char: ONLINE.myChar };
+        // 同じキャラは選べない：ホストと同じなら、空いている最初のキャラにする
+        joinedChar = ONLINE.myChar;
+        if (room.host.char === joinedChar) { for (let n = 1; n <= 8; n++) if (n !== room.host.char) { joinedChar = n; break; } }
+        room.guest = { uid: api.uid, name, char: joinedChar };
         return room;
       });
+      if (joinedChar !== ONLINE.myChar) { ONLINE.myChar = joinedChar; chars[0] = joinedChar; }
       await onlineEnter(code);
     } catch (e) { onMsg('入室できませんでした：' + e.message); }
+    finally { setEntryBusy(null); }
   }
   async function onlineEnter(code) {
     const api = ONLINE.api;
@@ -1299,6 +1439,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   function renderLobby(room) {
     const me = ONLINE.seat === 0 ? room.host : room.guest, op = ONLINE.seat === 0 ? room.guest : room.host;
     renderPlayers(me, op, room);
+    // 相手が選んでいるキャラは、自分の選択欄で選べなくする（同じキャラは選べない）
+    const oc = op ? op.char : 0;
+    if (oc !== ONLINE.oppChar) { ONLINE.oppChar = oc; buildFaces($('#faces1'), 0); }
     // ルールの表示（ホストだけ、ロビーの間は変えられる）
     $('#ruleSummary').textContent = rulesText(room.cfg);
     const isHost = ONLINE.seat === 0 && room.phase === 'lobby';
@@ -1406,7 +1549,15 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   function onlineStep(room) {
     if (!ONLINE.started) startOnlineBattle(room);
     // 再戦：新しい対戦が始まった（ラウンド1・結果なし）
-    if (room.state.round === 1 && !room.last && ONLINE.nextShow > 1) { startOnlineBattle(room); return; }
+    if (room.state.round === 1 && !room.last && ONLINE.nextShow > 1) {
+      // 再戦：暗転してから、新しいバトルに切り替える
+      if (!ONLINE.fading) {
+        ONLINE.fading = true; busy = true;
+        transition(() => { startOnlineBattle(room); busy = false; $('#startOverlay').style.display = 'none'; renderCommands(); }, 'NEXT BATTLE')
+          .finally(() => { ONLINE.fading = false; });
+      }
+      return;
+    }
     const seat = ONLINE.seat;
     // 1) 解決済みのラウンドがあれば演出する
     if (room.last && room.last.round >= ONLINE.nextShow && room.last.round === state.round) {
@@ -1546,7 +1697,13 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     const n = chars[0]; ONLINE.myChar = n;
     const seat = ONLINE.seat;
     if (ONLINE.room && ONLINE.room.phase === 'lobby') {
-      ONLINE.api.mutate(ONLINE.code, (rm) => { const p = seat === 0 ? rm.host : rm.guest; if (!p) return null; p.char = n; return rm; }).catch(() => {});
+      ONLINE.api.mutate(ONLINE.code, (rm) => {
+        const p = seat === 0 ? rm.host : rm.guest, other = seat === 0 ? rm.guest : rm.host;
+        if (!p) return null;
+        if (other && other.char === n) return null;       // 相手と同じキャラは選べない
+        p.char = n;
+        return rm;
+      }).catch(() => {});
     }
   });
   // URLに ?room=XXXX があれば、オンライン対戦の入室画面を開く（QRから来た人向け）
@@ -1567,13 +1724,19 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
   // BGMは大きいので、バトルを始めた時に裏で読み込む。読み込めた時点で、すでに開始済みなら鳴らし始める
   function preloadBgm() {
-    if (lite || !PACK_BGM) return;
-    // 対戦の通信を邪魔しないよう、少し待ってから、低優先度で読み込む
-    setTimeout(() => {
-      if (lite) return;
-      loadPack(PACK_BGM, null, true).then((done) => {
-        if (done && $('#startOverlay').style.display === 'none' && !bgmOn) startBGM();
-      });
+    stopBGM(); bgmData = null;
+    const token = ++bgmToken;
+    if (lite) return;
+    const entry = pickBgm();                          // バトルごとに、曲をランダムに選ぶ
+    // 対戦の通信を邪魔しないよう、少し待ってから読み込む
+    setTimeout(async () => {
+      if (lite || token !== bgmToken) return;
+      try {
+        const data = await prepareBgm(entry, token);
+        if (!data || token !== bgmToken || lite) return;
+        bgmData = data;
+        if ($('#startOverlay').style.display === 'none') startBGM();   // すでに「タップして開始」を押していれば、すぐ鳴らす
+      } catch (e) { /* 読み込み・展開に失敗したら、BGMなしで続ける */ }
     }, 2500);
   }
   async function bootAssets() {
