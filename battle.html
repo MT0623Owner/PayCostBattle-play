@@ -1,0 +1,1258 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PayCostBattle オンライン対戦</title>
+<style>
+/* RPGツクールMZのサイドビューバトル風。素材は ./src/ 配下（img/character＝SVアクターのシート、img/face、audio） */
+:root {
+  --bg: #0b1020;
+  --ink: #ffffff;
+  --muted: #aab4d4;
+  --win-bg: rgba(14, 22, 62, .90);
+  --win-line: rgba(214, 226, 255, .85);
+  --atk: #ff7a8a;
+  --chg: #7be3a6;
+  --def: #8fb8ff;
+  --hp: #4fe08a;
+  --hp-low: #ff5a5a;
+  --font: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); }
+body { padding-inline: 12px; padding-block: 12px 40px; }
+.app { max-width: 860px; margin: 0 auto; display: grid; gap: 10px; }
+h1 { font-size: 1.1rem; margin: 0; letter-spacing: .04em; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.top .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+button, select { font: inherit; color: inherit; }
+.btn { background: var(--win-bg); border: 1px solid var(--win-line); border-radius: 8px; padding: 6px 12px; min-height: 36px; cursor: pointer; }
+.btn:hover { background: rgba(40, 56, 130, .95); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn.primary { background: #3a5bd9; border-color: #fff; font-weight: 700; }
+select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--win-line); border-radius: 8px; padding: 6px 10px; min-height: 36px; }
+.faces { max-width: 380px; }
+:focus-visible { outline: 3px solid #ffd54a; outline-offset: 2px; }
+
+.window { background: var(--win-bg); border: 2px solid var(--win-line); border-radius: 10px; padding: 10px 12px; }
+
+/* ---- 選択画面 ---- */
+#select { display: grid; gap: 12px; }
+#select h2 { margin: 0; font-size: .95rem; color: var(--muted); font-weight: 500; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.faces { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.face { border: 2px solid transparent; border-radius: 8px; padding: 0; background: #1a2250; cursor: pointer; aspect-ratio: 1; background-repeat: no-repeat; position: relative; overflow: hidden; }
+.face.sel { border-color: #ffd54a; box-shadow: 0 0 0 2px rgba(255, 213, 74, .35); }
+.face span { position: absolute; left: 4px; bottom: 2px; font-size: .7rem; text-shadow: 0 0 3px #000; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
+
+/* ---- ステージ ---- */
+.stage-wrap { position: relative; width: 100%; overflow: hidden; border-radius: 10px; border: 2px solid var(--win-line); background: #000; }
+.stage { position: absolute; left: 0; top: 0; width: 816px; height: 480px; transform-origin: 0 0; overflow: hidden; }
+.bg-fallback { position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 18% at 22% 66%, #4a8a3a 0 60%, transparent 61%),
+    radial-gradient(ellipse 55% 22% at 80% 64%, #3f7a33 0 60%, transparent 61%),
+    linear-gradient(#7cc4ff 0%, #bfe4ff 52%, #5da24a 52.1%, #3d7a30 100%); }
+.bg1, .bg2 { position: absolute; inset: 0; background-size: cover; background-position: center bottom; background-repeat: no-repeat; }
+.battler { position: absolute; width: 160px; height: 160px; transition: transform .35s ease-out; will-change: transform; }
+.battler .shadow { position: absolute; left: 22px; bottom: 6px; width: 116px; height: 22px; border-radius: 50%; background: rgba(0, 0, 0, .35); }
+.battler .aura { position: absolute; left: 6px; top: 6px; width: 148px; height: 148px; border-radius: 50%; opacity: 0; background: radial-gradient(circle, rgba(255, 230, 90, .75) 0%, rgba(255, 170, 40, .35) 45%, transparent 70%); }
+.battler.charged .aura { opacity: 1; animation: aura 1s ease-in-out infinite alternate; }
+@keyframes aura { from { transform: scale(.9); opacity: .55; } to { transform: scale(1.12); opacity: 1; } }
+.battler .body { position: absolute; inset: 0; }
+.battler.flip .body { transform: scaleX(-1); }
+.battler .sprite { position: absolute; inset: 0; background-repeat: no-repeat; image-rendering: auto; }
+.battler .weapon { position: absolute; left: -80px; top: 6px; width: 240px; height: 160px; background-repeat: no-repeat; opacity: 0; }
+.battler .weapon.on { opacity: 1; }
+.battler.flash .body { filter: brightness(2.2) saturate(.6); }
+.tag { position: absolute; left: 50%; top: -6px; transform: translateX(-50%); padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 700; white-space: nowrap; border: 2px solid #fff; opacity: 0; transition: opacity .12s; }
+.tag.on { opacity: 1; }
+.tag.A { background: #c9304a; } .tag.C { background: #1f9a5d; } .tag.D { background: #2f5fc0; }
+.fx { position: absolute; inset: 0; pointer-events: none; }
+#fxgl { position: absolute; left: 0; top: 0; width: 816px; height: 480px; pointer-events: none; }
+.pop { position: absolute; transform: translate(-50%, 0); font-weight: 900; font-size: 40px; font-style: italic; color: #fff; -webkit-text-stroke: 3px #14204f; paint-order: stroke fill; text-shadow: 0 3px 0 rgba(0, 0, 0, .35); animation: pop 1s ease-out forwards; white-space: nowrap; }
+.pop.heal { color: #8cffb0; } .pop.cost { color: #ffc27a; font-size: 28px; } .pop.drain { color: #b6ff6b; }
+.pop.big { font-size: 30px; color: #ffe45e; letter-spacing: .08em; }
+.pop.text { font-size: 26px; font-style: normal; }
+.pop.text.def { color: #9cc4ff; } .pop.text.bad { color: #ff8a8a; }
+@keyframes pop { 0% { opacity: 0; transform: translate(-50%, 10px) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -14px) scale(1.15); } 30% { transform: translate(-50%, -4px) scale(1); } 100% { opacity: 0; transform: translate(-50%, -64px) scale(1); } }
+.slash { position: absolute; width: 230px; height: 10px; border-radius: 6px; background: linear-gradient(90deg, transparent, #fff 20%, #fff 80%, transparent); box-shadow: 0 0 14px #bfe8ff; transform-origin: center; opacity: 0; }
+.ring { position: absolute; width: 170px; height: 170px; border-radius: 50%; border: 6px solid #9fd0ff; box-shadow: 0 0 24px #5aa0ff, inset 0 0 24px #5aa0ff; transform: translate(-50%, -50%); opacity: 0; }
+.dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: radial-gradient(circle, #eaffb0, #5bd84a); box-shadow: 0 0 10px #8aff5a; }
+.shake { animation: shake .28s linear; }
+/* 揺れは個別プロパティ translate で行う（transform は、ステージの拡大縮小に使っているため上書きしない） */
+@keyframes shake { 0%, 100% { translate: 0 0; } 20% { translate: -8px 0; } 40% { translate: 7px 0; } 60% { translate: -5px 0; } 80% { translate: 3px 0; } }
+
+/* ステータスウィンドウ（MZ風） */
+.status { position: absolute; top: 14px; width: 270px; }
+.status.right { right: 14px; } .status.left { left: 14px; }
+.status .nm { display: flex; justify-content: space-between; font-size: 18px; font-weight: 700; }
+.status .nm small { font-weight: 500; color: var(--muted); font-size: 13px; }
+.gauge { height: 14px; background: #101640; border: 2px solid #fff; border-radius: 8px; overflow: hidden; margin-top: 4px; }
+.gauge i { display: block; height: 100%; width: 100%; background: linear-gradient(#8bffbb, var(--hp)); transition: width .5s ease-out; }
+.gauge i.low { background: linear-gradient(#ff9a9a, var(--hp-low)); }
+.hpnum { font-size: 22px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.hpnum small { font-size: 13px; color: var(--muted); font-weight: 500; }
+.chips { display: flex; gap: 6px; min-height: 22px; flex-wrap: wrap; }
+.chip { font-size: 12px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--win-line); }
+.chip.on { background: rgba(255, 213, 74, .25); border-color: #ffd54a; color: #ffe9a0; }
+.msg { position: absolute; left: 50%; top: 150px; transform: translateX(-50%); max-width: 640px; text-align: center; font-size: 22px; font-weight: 700; padding: 6px 18px; background: var(--win-bg); border: 2px solid var(--win-line); border-radius: 10px; opacity: 0; transition: opacity .15s; white-space: nowrap; }
+.msg.on { opacity: 1; }
+.banner { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transition: opacity .3s; }
+.banner.on { opacity: 1; pointer-events: auto; }
+.banner > div { text-align: center; display: grid; gap: 14px; }
+.banner h2 { margin: 0; font-size: 64px; letter-spacing: .1em; -webkit-text-stroke: 3px #14204f; paint-order: stroke fill; }
+.banner h2.win { color: #ffe45e; } .banner h2.lose { color: #9aa8d8; } .banner h2.draw { color: #bfe4ff; }
+
+/* ---- コマンド ---- */
+.cmdwin { display: grid; gap: 8px; }
+.cmdwin h3 { margin: 0; font-size: .85rem; color: var(--muted); font-weight: 500; }
+.cmds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cmd { text-align: left; border-radius: 10px; border: 2px solid var(--win-line); background: rgba(24, 36, 100, .85); padding: 10px 12px; cursor: pointer; display: grid; gap: 2px; min-width: 0; }
+.cmd .name { font-weight: 800; font-size: 1.15rem; }
+.cmd .info { font-size: .74rem; color: var(--muted); line-height: 1.35; }
+.cmd.A .name { color: var(--atk); } .cmd.C .name { color: var(--chg); } .cmd.D .name { color: var(--def); }
+.cmd:hover:not(:disabled) { background: rgba(60, 84, 190, .95); }
+.cmd.sel { outline: 3px solid #ffd54a; }
+.cmd:disabled { opacity: .45; cursor: not-allowed; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .pair { grid-template-columns: 1fr; } .cmd .info { font-size: .68rem; } }
+.cover { text-align: center; padding: 16px; display: grid; gap: 10px; }
+.note { font-size: .8rem; color: var(--muted); }
+.start-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .55); z-index: 5; }
+@media (prefers-reduced-motion: reduce) { .battler, .gauge i { transition: none; } .shake, .battler.charged .aura { animation: none; } }
+
+/* ---- オンライン ---- */
+input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--ink); border: 1px solid var(--win-line); border-radius: 8px; padding: 6px 10px; min-height: 36px; font: inherit; }
+#onlinePanel { display: grid; gap: 10px; }
+#lobby { display: grid; gap: 10px; }
+.roomcode { font-size: 1.6rem; font-weight: 800; letter-spacing: .25em; color: #ffe45e; }
+.qrbox { background: #fff; padding: 8px; border-radius: 8px; width: max-content; }
+.qrbox canvas { display: block; width: 168px; height: 168px; }
+.players { display: grid; gap: 4px; font-size: .95rem; }
+.players b { color: #ffe45e; }
+/* 素材が無い環境（公開ページ）の代用キャラ */
+.battler .ph { position: absolute; left: 34px; top: 46px; width: 92px; height: 104px; border-radius: 46px 46px 20px 20px; background: var(--ph, #6b7bd6); border: 3px solid #fff; display: none; box-shadow: 0 6px 0 rgba(0,0,0,.25); }
+.battler .ph::before { content: ''; position: absolute; left: 20px; top: 30px; width: 10px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 40px 0 0 #fff; }
+.battler .ph::after { content: attr(data-n); position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-weight: 800; color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.battler.noart .ph { display: block; animation: bob 1s ease-in-out infinite alternate; }
+.battler.noart .sprite, .battler.noart .weapon { display: none; }
+.battler.noart[data-motion="swing"] .ph, .battler.noart[data-motion="walk"] .ph { transform: rotate(-10deg); animation: none; }
+.battler.noart[data-motion="damage"] .ph { transform: rotate(14deg); animation: none; filter: brightness(1.4); }
+.battler.noart[data-motion="guard"] .ph { transform: scale(.94); border-color: #9cc4ff; animation: none; }
+.battler.noart[data-motion="chant"] .ph { animation: bob .35s ease-in-out infinite alternate; border-color: #ffe45e; }
+.battler.noart[data-motion="dead"] .ph, .battler.noart[data-motion="dying"] .ph { transform: rotate(82deg) translateX(10px); animation: none; opacity: .8; }
+.battler.noart[data-motion="victory"] .ph { animation: bob .4s ease-in-out infinite alternate; border-color: #ffe45e; }
+@keyframes bob { from { transform: translateY(0); } to { transform: translateY(-6px); } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <h1>PayCostBattle（オンライン対戦）</h1>
+    <div class="tools">
+      <button class="btn" id="btnSpeed" type="button">演出：通常</button>
+      <button class="btn" id="btnMute" type="button">音：ON</button>
+      <button class="btn" id="btnMenu" type="button">メニューに戻る</button>
+    </div>
+  </div>
+
+  <!-- 選択画面 -->
+  <section id="select" class="window">
+    <div class="row">
+      <label for="mode">モード</label>
+      <select id="mode">
+        <option value="cpu">CPUと対戦</option>
+        <option value="two">2人で対戦（1台で同時入力）</option>
+        <option value="hot">2人で対戦（交代入力）</option>
+        <option value="online">オンライン対戦（QRで部屋に招待）</option>
+      </select>
+      <label for="diff" id="diffLabel">CPUの強さ</label>
+      <select id="diff">
+        <option value="easy">かんたん</option>
+        <option value="normal" selected>ふつう</option>
+        <option value="hard">つよい</option>
+      </select>
+    </div>
+    <div class="cols">
+      <div><h2 id="p1Title">あなたのキャラ</h2><div class="faces" id="faces1"></div></div>
+      <div><h2 id="p2Title">相手のキャラ</h2><div class="faces" id="faces2"></div></div>
+    </div>
+    <div id="onlinePanel" hidden>
+      <div class="row">
+        <label for="onName">名前</label>
+        <input id="onName" type="text" maxlength="12" placeholder="あなたの名前">
+      </div>
+      <div class="row">
+        <button class="btn primary" id="btnCreateRoom" type="button">部屋を作る</button>
+        <span class="note">または</span>
+        <input id="roomInput" type="text" maxlength="6" placeholder="部屋コード" style="text-transform:uppercase;width:8em">
+        <button class="btn" id="btnJoinRoom" type="button">部屋に参加</button>
+      </div>
+      <div id="lobby" hidden>
+        <div>部屋コード：<span class="roomcode" id="roomCodeText"></span></div>
+        <div class="row">
+          <div class="qrbox"><canvas id="roomQr" width="168" height="168"></canvas></div>
+          <div class="note" id="roomHelp">このQRか下のURLを、対戦相手に送る（相手が読み取るとこの部屋に入る）。</div>
+        </div>
+        <div class="row"><input id="roomUrl" type="text" readonly style="flex:1;min-width:12em"><button class="btn" id="btnCopy" type="button">URLをコピー</button></div>
+        <div class="players" id="lobbyPlayers"></div>
+        <div class="row"><button class="btn primary" id="btnOnlineStart" type="button" disabled>バトル開始（部屋を作った人）</button></div>
+      </div>
+      <div class="note" id="onlineMsg"></div>
+    </div>
+    <div class="row">
+      <label for="bgsel">バトル背景</label>
+      <select id="bgsel">
+        <option value="random">ランダム</option>
+        <option value="Grassland">草原</option>
+        <option value="Desert">砂漠</option>
+        <option value="Wood1">森</option>
+      </select>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="btnStart" type="button">バトル開始</button>
+      <span class="note">ルールは、戦闘画面の「あそびかた」で確認できます。</span>
+    </div>
+  </section>
+
+  <!-- 戦闘画面 -->
+  <div id="battle" hidden style="display:none;gap:10px;">
+    <div class="stage-wrap" id="stageWrap">
+      <div class="stage" id="stage">
+        <div class="bg-fallback" id="bgFallback"></div>
+        <div class="bg1" id="bg1"></div>
+        <div class="bg2" id="bg2"></div>
+
+        <div class="battler flip" id="bt1" style="left:150px; top:210px;">
+          <div class="shadow"></div><div class="aura"></div><div class="body"><div class="sprite"></div><div class="weapon"></div></div><div class="tag" id="tag1"></div>
+        </div>
+        <div class="battler" id="bt0" style="left:520px; top:230px;">
+          <div class="shadow"></div><div class="aura"></div><div class="body"><div class="sprite"></div><div class="weapon"></div></div><div class="tag" id="tag0"></div>
+        </div>
+        <canvas id="fxgl" width="1632" height="960"></canvas>
+        <div class="fx" id="fx"></div>
+
+        <div class="window status left" id="st1"></div>
+        <div class="window status right" id="st0"></div>
+        <div class="msg" id="msg"></div>
+        <div class="banner" id="banner"><div><h2 id="bannerText"></h2><button class="btn primary" id="btnAgain" type="button">もう一度</button></div></div>
+        <div class="start-overlay" id="startOverlay"><button class="btn primary" id="btnGo" type="button" style="font-size:22px;padding:12px 28px">タップして開始</button></div>
+      </div>
+    </div>
+    <div class="window cmdwin" id="cmdwin"></div>
+    <div class="window" style="padding:8px 12px"><details><summary style="cursor:pointer">あそびかた</summary>
+      <ul style="margin:8px 0 0;padding-left:1.2em;font-size:.85rem;line-height:1.6">
+        <li>HPがそのままコスト。HP0で負け。毎ラウンド、お互いに同時に選びます。</li>
+        <li><b>攻撃</b>：−5を払って10ダメージ。<b>貯める</b>：+5回復、次の攻撃が2倍。<b>防御</b>：相手の攻撃を防ぐ（連続で失敗しやすくなる）。</li>
+        <li>防御の次は貯められません。あいこは両者−2。攻撃は時々クリティカルで、相手から5を奪います。</li>
+      </ul></details></div>
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = (s) => document.querySelector(s);
+  const NAMES = { A: '攻撃', C: '貯める', D: '防御' };
+
+  // ---------- 素材 ----------
+  const IMG = (n) => `./src/img/character/Actor1_${n}.png`;   // SVアクターのシート（9列×6行、64px）
+  const FACE = './src/img/face/Actor1.png';                     // 顔グラ（4列×2行、144px）
+  const WEAPON = './src/img/Weapon/Weapons1.png';               // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
+  const WEAPON_ID = 2;                                           // 1=短剣、2=剣、3=フレイル、4=斧、5=ムチ、6=杖 ／ 7=弓…（MZのweaponImageId）
+  const BATTLEBACKS = ['Grassland', 'Desert', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
+  const SE = { attack: './src/audio/se/Attack3.ogg', damage: './src/audio/se/Damage2.ogg', guard: './src/audio/se/Reflection.ogg',
+               charge: './src/audio/se/Powerup.ogg', drain: './src/audio/se/Absorb2.ogg',
+               sword: './src/audio/se/Sword1.ogg', blow: './src/audio/se/Blow1.ogg', dash: './src/audio/se/Evasion2.ogg' };
+  const BGM = './src/audio/bgm/03_Endless_Battle.ogg';
+  const ME = { win: './src/audio/me/Victory2.ogg', lose: './src/audio/me/Defeat1.ogg' };
+
+  // SVアクターのモーション（MZの並びに合わせる。1モーション3コマ、1行に3モーション）
+  const MOTION = { walk: 0, wait: 1, chant: 2, guard: 3, damage: 4, evade: 5, thrust: 6, swing: 7, missile: 8,
+                   skill: 9, spell: 10, item: 11, escape: 12, victory: 13, dying: 14, abnormal: 15, sleep: 16, dead: 17 };
+  const S = 2.5;            // 64px → 160px
+  const CELL = 64 * S;
+
+  // ---------- 音 ----------
+  let muted = false, bgm = null, bgmOn = false;
+  function playSE(src, vol = 0.8) {
+    if (muted) return;
+    try { const a = new Audio(src); a.volume = vol; a.play().catch(() => {}); } catch (e) { /* 無視 */ }
+  }
+  function startBGM() {
+    if (bgmOn) return;
+    try {
+      bgm = new Audio(BGM); bgm.loop = true; bgm.volume = 0.45; bgm.muted = muted;
+      bgm.play().then(() => { bgmOn = true; }).catch(() => {});
+    } catch (e) { /* 無視 */ }
+  }
+  function stopBGM() { try { if (bgm) { bgm.pause(); bgm.currentTime = 0; } } catch (e) {} bgmOn = false; }
+
+  // ---------- 状態 ----------
+  const cfg = PCB.makeConfig();
+  let mode = 'cpu', diff = 'normal';
+  let chars = [1, 2];                 // [右側（あなた/P1）, 左側（相手/P2）] のアクター番号
+  let state = null, busy = false, pick = [null, null], phase = 'p1';
+  let speed = 1;                       // 1=通常、0.5=はやい
+  let skip = false;
+  let onlineNames = ['あなた', '相手'];       // オンライン時の表示名 [自分, 相手]
+  const nameOf = (i) => mode === 'online' ? onlineNames[i] : mode === 'cpu' ? (i === 0 ? 'あなた' : 'CPU') : (i === 0 ? 'プレイヤー1' : 'プレイヤー2');
+
+  // ---------- 選択画面 ----------
+  function buildFaces(el, idx) {
+    el.innerHTML = '';
+    for (let n = 1; n <= 8; n++) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'face' + (chars[idx] === n ? ' sel' : '');
+      const col = (n - 1) % 4, row = Math.floor((n - 1) / 4);
+      b.style.backgroundImage = `url(${FACE})`;
+      b.style.backgroundSize = '400% 200%';
+      b.style.backgroundPosition = `${col * 100 / 3}% ${row * 100}%`;
+      b.style.backgroundColor = `hsl(${n * 47 % 360} 55% 38%)`;   // 画像が無い時の代用色
+      b.setAttribute('aria-label', `キャラ${n}`);
+      b.innerHTML = `<span>${n}</span>`;
+      b.addEventListener('click', () => { chars[idx] = n; buildFaces($('#faces' + (idx + 1)), idx); });
+      el.appendChild(b);
+    }
+  }
+  function refreshSelect() {
+    mode = $('#mode').value; diff = $('#diff').value;
+    const cpu = mode === 'cpu', online = mode === 'online';
+    $('#diff').hidden = !cpu; $('#diffLabel').hidden = !cpu;
+    $('#p1Title').textContent = (cpu || online) ? 'あなたのキャラ' : 'プレイヤー1（右側）のキャラ';
+    $('#p2Title').textContent = cpu ? 'CPUのキャラ' : 'プレイヤー2（左側）のキャラ';
+    $('#faces2').parentElement.style.display = online ? 'none' : '';
+    $('#onlinePanel').hidden = !online;
+    $('#btnStart').parentElement.style.display = online ? 'none' : '';
+    $('#bgsel').parentElement.style.display = online ? 'none' : '';
+  }
+  $('#mode').addEventListener('change', refreshSelect);
+  $('#diff').addEventListener('change', refreshSelect);
+
+  // ---------- ステージ ----------
+  const stage = $('#stage'), wrap = $('#stageWrap');
+  function fit() {
+    const k = wrap.clientWidth / 816;
+    stage.style.transform = `scale(${k})`;
+    wrap.style.height = `${480 * k}px`;
+  }
+  new ResizeObserver(fit).observe(wrap);
+  window.addEventListener('resize', fit);
+
+  // 背景：./src/img/battleback/<名前>.png（1000×740）。無ければCSSの簡易背景
+  function setBg(name) {
+    const url = `./src/img/battleback/${name}.png`;
+    const im = new Image();
+    im.onload = () => {
+      const el = $('#bg1');
+      el.style.backgroundImage = `url(${url})`;
+      el.style.backgroundSize = '816px auto';       // 地平線が上寄りに来る（立ち位置が地面に乗る）
+      el.style.backgroundPosition = 'center top';
+      $('#bgFallback').style.display = 'none';
+    };
+    im.onerror = () => { $('#bg1').style.backgroundImage = ''; $('#bgFallback').style.display = ''; };
+    im.src = url;
+  }
+  function pickBg() {
+    const sel = $('#bgsel').value;
+    const q = new URLSearchParams(location.search).get('bg');
+    const name = q || (sel === 'random' ? BATTLEBACKS[Math.floor(Math.random() * BATTLEBACKS.length)] : sel);
+    setBg(name);
+  }
+
+  // ---------- スプライト ----------
+  class Battler {
+    constructor(idx) {
+      this.idx = idx; this.el = $('#bt' + idx); this.sprite = this.el.querySelector('.sprite');
+      this.weapon = this.el.querySelector('.weapon');
+      this.ph = document.createElement('div'); this.ph.className = 'ph';
+      this.el.querySelector('.body').appendChild(this.ph);
+      this.weapon.style.backgroundImage = `url(${WEAPON})`;
+      this.weapon.style.backgroundSize = `${576 * S}px ${384 * S}px`;
+      this.motion = 'wait'; this.loop = true; this.frame = 0; this.timer = null; this.actor = 1;
+      this.base = { x: parseFloat(this.el.style.left), y: parseFloat(this.el.style.top) };
+      this.dx = 0;
+    }
+    setActor(n) {
+      this.actor = n;
+      this.sprite.style.backgroundImage = `url(${IMG(n)})`;
+      this.sprite.style.backgroundSize = `${576 * S}px ${384 * S}px`;
+      // 素材が無い環境（公開ページなど）では、代用のキャラ表示にする
+      this.ph.dataset.n = n; this.ph.style.setProperty('--ph', `hsl(${n * 47 % 360} 55% 48%)`);
+      this.el.classList.remove('noart');
+      const im = new Image();
+      im.onerror = () => { if (this.actor === n) this.el.classList.add('noart'); };
+      im.src = IMG(n);
+      this.setMotion('wait', true);
+    }
+    draw(frame) {
+      const m = MOTION[this.motion];
+      const x = (m % 3) * 3 * 64 + frame * 64, y = Math.floor(m / 3) * 64;
+      this.sprite.style.backgroundPosition = `${-x * S}px ${-y * S}px`;
+      // 武器：攻撃モーション（thrust/swing/missile）の間だけ、同じコマ番号で表示（MZのSprite_Weaponと同じ並び）
+      const armed = this.motion === 'swing' || this.motion === 'thrust' || this.motion === 'missile';
+      this.weapon.classList.toggle('on', armed);
+      if (armed) {
+        const i = (WEAPON_ID - 1) % 12;
+        const wx = (Math.floor(i / 6) * 3 + frame) * 96, wy = (i % 6) * 64;
+        this.weapon.style.backgroundPosition = `${-wx * S}px ${-wy * S}px`;
+      }
+    }
+    setMotion(name, loop) {
+      this.motion = name; this.loop = loop; this.frame = 0; this.step = 0; this.draw(0);
+      this.el.dataset.motion = name;
+      clearInterval(this.timer);
+      const seq = [0, 1, 2, 1];
+      this.timer = setInterval(() => {
+        // ループするモーションは 0,1,2,1 を繰り返す。1回きりのモーションは最後のコマで止める
+        this.step = loop ? (this.step + 1) % 4 : Math.min(this.step + 1, 2);
+        this.draw(loop ? seq[this.step] : this.step);
+      }, loop ? 190 : 150);
+    }
+    idle() {
+      const dying = state && state.hp[this.idx] > 0 && state.hp[this.idx] <= cfg.hp * 0.25;
+      this.setMotion(dying ? 'dying' : 'wait', true);
+    }
+    move(dx, dy = 0) { this.dx = dx; this.el.style.transform = `translate(${dx}px, ${dy}px)`; }
+    center() { return { x: this.base.x + 80 + this.dx, y: this.base.y + 70 }; }
+  }
+  const B = [new Battler(0), new Battler(1)];
+
+  // ---------- Effekseer（本物のMZエフェクト） ----------
+  // 1ユニット＝1px の正射影で、ステージ（816×480）にそのまま重ねる。
+  const FXFILES = { slash: './src/effect/SlashPhysical_MZ.efkefc', hit: './src/effect/HitPhysical_MZ.efkefc', power: './src/effect/Powerup1_MZ.efkefc' };
+  const TEXDIR = './src/effect/Texture/';
+  const TEXNAMES = ['Particle100', 'Slash1', 'Circle', 'Fog', 'ParticleAlpha', 'ShockWaveRing1'];
+  const FX_SCALE = 1.0;     // 読み込み時の倍率（等倍のまま。大きさは下の FXSCALE で再生時に決める）
+  // 再生時の大きさ（1ユニット＝約1.0pxだと、MZのエフェクトは十数pxにしかならない。実測で、画面上で
+  // 斬撃≒200px・命中≒170px・貯め≒160px幅になる倍率にしてある。大きすぎ・小さすぎなら、ここを調整する）
+  const FXSCALE = { slash: 12, hit: 8, power: 14 };
+  const EFX = { ready: false, ctx: null, gl: null, canvas: null, effects: {}, handles: new Set(), raf: 0, last: 0, tex: {}, missing: [] };
+
+  // テクスチャ画像が無い時の代用（やわらかい光の円／細い光の線）。本物を置けば自動で本物が使われる
+  function placeholderTexture(name) {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d');
+    if (name === 'Slash1') {
+      g.translate(64, 64); g.rotate(-0.6);
+      const gr = g.createLinearGradient(-64, 0, 64, 0);
+      gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.5, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(-64, -7, 128, 14);
+    } else {
+      const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+      gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    }
+    return c.toDataURL('image/png');
+  }
+  async function probeTextures() {
+    await Promise.all(TEXNAMES.map(async (n) => {
+      const url = `${TEXDIR}${n}.png`;
+      try {
+        const r = await fetch(url, { method: 'HEAD' });
+        if (r.ok) { EFX.tex[n] = url; return; }
+      } catch (e) { /* 無視 */ }
+      EFX.tex[n] = placeholderTexture(n); EFX.missing.push(n);
+    }));
+  }
+  function initFX() {
+    if (typeof effekseer === 'undefined') { console.info('Effekseerのランタイムが無いので、CSSの簡易演出を使います'); return; }
+    const canvas = $('#fxgl');
+    const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true });
+    if (!gl) return;
+    EFX.canvas = canvas; EFX.gl = gl;
+    probeTextures().then(() => {
+      effekseer.initRuntime('./src/effect/effekseer.wasm', () => {
+        const ctx = effekseer.createContext();
+        ctx.init(gl);
+        // 既定のローダーは拡張子（.png/.jpg）で画像かどうかを見分けるため、代用テクスチャ（data URL）が画像として読まれない。
+        // 画像は Image で、それ以外は ArrayBuffer で読む自前のローダーに差し替える（2のべき乗でない画像は2のべき乗に直す）。
+        const isPow2 = (n) => (n & (n - 1)) === 0;
+        const nextPow2 = (n) => { let p = 1; while (p < n) p <<= 1; return p; };
+        const toPow2 = (img) => {
+          if (isPow2(img.width) && isPow2(img.height)) return img;
+          const c = document.createElement('canvas');
+          c.width = nextPow2(img.width); c.height = nextPow2(img.height);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          return c;
+        };
+        ctx.setResourceLoader((path, onload, onerror) => {
+          const base = path.split('?')[0];
+          const dot = base.lastIndexOf('.');
+          const ext = dot >= 0 ? base.slice(dot).toLowerCase() : '';
+          if (path.startsWith('data:image') || ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => onload(toPow2(img));
+            img.onerror = () => { if (onerror) onerror('not found', path); };
+            img.src = path;
+          } else {
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', path, true);
+            xhr.responseType = 'arraybuffer';
+            xhr.onload = () => { if (xhr.status === 200 || xhr.status === 0) onload(xhr.response); else if (onerror) onerror('not found', path); };
+            xhr.onerror = () => { if (onerror) onerror('not found', path); };
+            xhr.send(null);
+          }
+        });
+        ctx.setProjectionOrthographic(816, 480, 0.1, 4000);
+        ctx.setCameraLookAt(0, 0, 1000, 0, 0, 0, 0, 1, 0);
+        EFX.ctx = ctx;
+        const redirect = (p) => {
+          const m = /([^\/\\]+)\.png$/i.exec(p);
+          return (m && EFX.tex[m[1]]) ? EFX.tex[m[1]] : p;
+        };
+        const names = Object.keys(FXFILES);
+        let left = names.length;
+        names.forEach((k) => {
+          EFX.effects[k] = ctx.loadEffect(FXFILES[k], FX_SCALE,
+            () => { if (--left === 0) EFX.ready = true; },
+            (m) => { console.warn('エフェクトの読み込みに失敗', k, m); if (--left === 0) EFX.ready = true; delete EFX.effects[k]; },
+            redirect);
+        });
+        // Effekseerの読み込みは ctx.update() の中で完了する仕組みなので、全部読み込めるまで定期的に回す
+        let tries = 0;
+        const pump = () => {
+          if (EFX.ready || tries++ > 200) return;   // 約10秒で諦める（その場合はCSSの簡易演出）
+          try { ctx.update(0); } catch (e) { /* 読み込み中は無視 */ }
+          setTimeout(pump, 50);
+        };
+        pump();
+      }, (m) => console.warn('Effekseerランタイムの初期化に失敗', m));
+    });
+  }
+  function fxLoop(t) {
+    const ctx = EFX.ctx, gl = EFX.gl;
+    const dt = Math.min(3, Math.max(0.2, (t - EFX.last) / 16.667));
+    EFX.last = t;
+    ctx.update(dt);
+    gl.viewport(0, 0, EFX.canvas.width, EFX.canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    ctx.draw();
+    EFX.handles.forEach((h) => { if (!h.exists) EFX.handles.delete(h); });
+    if (EFX.handles.size) EFX.raf = requestAnimationFrame(fxLoop);
+    else { EFX.raf = 0; gl.clear(gl.COLOR_BUFFER_BIT); }
+  }
+  // 対象(idx)の位置でエフェクトを再生する。再生できたらtrue（できなければ呼び出し側がCSS演出にする）
+  function playFX(kind, idx, opt) {
+    if (!EFX.ready || !EFX.effects[kind]) return false;
+    opt = opt || {};
+    const c = B[idx].center();
+    const h = EFX.ctx.play(EFX.effects[kind], c.x - 408 + (opt.dx || 0), 240 - c.y + (opt.dy || 0), 0);
+    const sc = (FXSCALE[kind] || 1) * (opt.scale || 1);
+    h.setScale(opt.mirror ? -sc : sc, sc, sc);
+    EFX.handles.add(h);
+    if (!EFX.raf) { EFX.last = performance.now(); EFX.raf = requestAnimationFrame(fxLoop); }
+    return true;
+  }
+
+  // ---------- 演出ユーティリティ ----------
+  const sleep = (ms) => new Promise((res) => setTimeout(res, skip ? Math.min(40, ms * speed) : ms * speed));
+  const fx = $('#fx');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function pop(idx, text, cls = '', dy = 0, dx = 0) {
+    const c = B[idx].center();
+    const el = document.createElement('div');
+    el.className = 'pop ' + cls; el.textContent = text;
+    el.style.left = `${c.x + dx}px`; el.style.top = `${c.y - 60 + dy}px`;
+    fx.appendChild(el);
+    setTimeout(() => el.remove(), 1100 * (skip ? 0.3 : 1) + 50);
+  }
+  function popText(idx, text, cls) { pop(idx, text, 'text ' + (cls || ''), -30); }
+  function shake() { if (reduce) return; stage.classList.remove('shake'); void stage.offsetWidth; stage.classList.add('shake'); }
+  function flash(idx) { B[idx].el.classList.add('flash'); setTimeout(() => B[idx].el.classList.remove('flash'), 110); }
+  function slash(idx) {
+    const c = B[idx].center();
+    [-35, 35].forEach((deg, k) => {
+      const el = document.createElement('div');
+      el.className = 'slash';
+      el.style.left = `${c.x - 115}px`; el.style.top = `${c.y - 5}px`;
+      fx.appendChild(el);
+      el.animate([
+        { opacity: 0, transform: `rotate(${deg}deg) scaleX(.2)` },
+        { opacity: 1, transform: `rotate(${deg}deg) scaleX(1)`, offset: .4 },
+        { opacity: 0, transform: `rotate(${deg}deg) scaleX(1.1)` }
+      ], { duration: 320, delay: k * 90, fill: 'both' });
+      setTimeout(() => el.remove(), 600);
+    });
+  }
+  function ring(idx) {
+    const c = B[idx].center();
+    const el = document.createElement('div');
+    el.className = 'ring'; el.style.left = `${c.x}px`; el.style.top = `${c.y}px`;
+    fx.appendChild(el);
+    el.animate([
+      { opacity: 0, transform: 'translate(-50%,-50%) scale(.5)' },
+      { opacity: 1, transform: 'translate(-50%,-50%) scale(1)', offset: .35 },
+      { opacity: 0, transform: 'translate(-50%,-50%) scale(1.3)' }
+    ], { duration: 520, fill: 'both' });
+    setTimeout(() => el.remove(), 700);
+  }
+  function drainFx(from, to) {
+    const a = B[from].center(), b = B[to].center();
+    for (let k = 0; k < 9; k++) {
+      const el = document.createElement('div'); el.className = 'dot';
+      const jx = (Math.random() - .5) * 70, jy = (Math.random() - .5) * 70;
+      el.style.left = `${a.x + jx}px`; el.style.top = `${a.y + jy}px`;
+      fx.appendChild(el);
+      el.animate([
+        { transform: 'translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(${b.x - a.x - jx}px, ${b.y - a.y - jy}px) scale(.6)`, opacity: .9 }
+      ], { duration: 520 + k * 40, delay: k * 35, easing: 'ease-in', fill: 'both' });
+      setTimeout(() => el.remove(), 1100);
+    }
+  }
+  function showTags(cmd) {
+    [0, 1].forEach((i) => {
+      const t = $('#tag' + i);
+      t.className = 'tag on ' + cmd[i]; t.textContent = NAMES[cmd[i]];
+    });
+  }
+  function hideTags() { [0, 1].forEach((i) => { $('#tag' + i).className = 'tag'; }); }
+  const msgEl = $('#msg');
+  function say(t) { msgEl.textContent = t; msgEl.classList.toggle('on', !!t); }
+
+  // ---------- ステータス ----------
+  let view = null;   // 演出中の表示用HP（1つずつ出来事を反映する）。nullなら実際の値を表示
+  function viewHp(i) { return Math.max(0, Math.min(cfg.hp, view ? view.hp[i] : state.hp[i])); }
+  function statusHTML(i) {
+    const hp = viewHp(i);
+    const low = hp <= cfg.hp * 0.25;
+    const chips = [];
+    if (state.ch[i]) chips.push(`<span class="chip on">◆貯め済み×${cfg.chargeMult}</span>`);
+    if (state.ds[i] > 0) chips.push(`<span class="chip">防御連続${state.ds[i]}</span>`);
+    return `<div class="nm"><span>${nameOf(i)}</span><small>キャラ${chars[i]}</small></div>
+      <div class="hpnum">${hp}<small> / ${cfg.hp}</small></div>
+      <div class="gauge"><i class="${low ? 'low' : ''}" style="width:${hp / cfg.hp * 100}%"></i></div>
+      <div class="chips">${chips.join('')}</div>`;
+  }
+  function renderStatus() {
+    $('#st0').innerHTML = statusHTML(0);
+    $('#st1').innerHTML = statusHTML(1);
+    B.forEach((b, i) => b.el.classList.toggle('charged', !!state.ch[i]));
+  }
+
+  // ---------- コマンド入力 ----------
+  function info(c, i) {
+    if (c === 'A') {
+      const m = state.ch[i] ? cfg.chargeMult : 1;
+      return `コスト−${cfg.attackCost}／${cfg.damage * m}ダメージ${m > 1 ? '（貯め後）' : ''}`;
+    }
+    if (c === 'C') return `+${cfg.heal}回復／次の攻撃${cfg.chargeMult}倍`;
+    return 'コストなし／相手の攻撃を防ぐ（連続で失敗しやすい）';
+  }
+  function cmdGroup(i, onPick, selected) {
+    const ok = PCB.allowed(state.last[i], cfg);
+    const g = document.createElement('div'); g.className = 'cmds';
+    ['A', 'C', 'D'].forEach((c) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = `cmd ${c}${selected === c ? ' sel' : ''}`;
+      b.disabled = busy || state.over || !ok.includes(c);
+      const reason = !ok.includes(c) ? (c === 'D' ? '貯めた次は防御できない' : '防御した次は貯められない') : info(c, i);
+      b.innerHTML = `<span class="name">${NAMES[c]}</span><span class="info">${reason}</span>`;
+      b.addEventListener('click', () => onPick(c));
+      g.appendChild(b);
+    });
+    return g;
+  }
+  function renderCommands() {
+    const w = $('#cmdwin'); w.innerHTML = '';
+    if (state.over) { w.innerHTML = '<div class="note">対戦が終わりました。</div>'; return; }
+    if (busy) { w.innerHTML = '<div class="note">……</div>'; return; }
+    const h = (t) => { const e = document.createElement('h3'); e.textContent = t; return e; };
+    if (mode === 'online') {
+      renderOnlineCommands(w, h);
+    } else if (mode === 'cpu') {
+      w.appendChild(h(`${nameOf(0)}の手を選ぶ（CPUも同時に選びます）`));
+      w.appendChild(cmdGroup(0, (c) => runRound([c, PCB.cpuChoose(state, 1, diff, cfg)]), null));
+    } else if (mode === 'two') {
+      const pr = document.createElement('div'); pr.className = 'pair';
+      [1, 0].forEach((i) => {   // 左側（P2）を左、右側（P1）を右に並べる
+        const box = document.createElement('div');
+        box.appendChild(h(`${nameOf(i)}（${i === 0 ? '右' : '左'}側）${pick[i] ? '：決定済み' : ''}`));
+        box.appendChild(pick[i] ? lockedBox() : cmdGroup(i, (c) => { pick[i] = c; if (pick[0] && pick[1]) runRound(pick.slice()); else renderCommands(); }, null));
+        pr.appendChild(box);
+      });
+      w.appendChild(pr);
+      w.appendChild(Object.assign(document.createElement('div'), { className: 'note', textContent: '選んだ手は、2人とも決めるまで相手に見せません（画面は見ないでね）。' }));
+    } else {
+      if (phase === 'p1') {
+        w.appendChild(h(`${nameOf(0)}の手を選ぶ（${nameOf(1)}は見ないでください）`));
+        w.appendChild(cmdGroup(0, (c) => { pick[0] = c; phase = 'cover'; renderCommands(); }, null));
+      } else if (phase === 'cover') {
+        const d = document.createElement('div'); d.className = 'cover';
+        d.innerHTML = `<div>${nameOf(0)}の手は伏せました。${nameOf(1)}に端末を渡してください。</div>`;
+        const b = document.createElement('button'); b.className = 'btn primary'; b.type = 'button'; b.textContent = `${nameOf(1)}の番に進む`;
+        b.addEventListener('click', () => { phase = 'p2'; renderCommands(); });
+        d.appendChild(b); w.appendChild(d);
+      } else {
+        w.appendChild(h(`${nameOf(1)}の手を選ぶ`));
+        w.appendChild(cmdGroup(1, (c) => runRound([pick[0], c]), null));
+      }
+    }
+  }
+  function lockedBox() {
+    const d = document.createElement('div'); d.className = 'cover';
+    d.textContent = '決定しました。相手を待っています。';
+    return d;
+  }
+
+  // ---------- 1ラウンドの演出 ----------
+  async function playEvent(ev) {
+    if (ev.t === 'attack') {
+      const a = B[ev.from], t = B[ev.to];
+      const dir = ev.from === 0 ? -1 : 1;                       // 右側は左へ、左側は右へ
+      const dist = Math.abs((t.base.x + t.dx) - (a.base.x + a.dx)) - 150;
+      say(`${nameOf(ev.from)}の攻撃！${ev.mult > 1 ? '（貯め後）' : ''}`);
+      pop(ev.from, `−${ev.cost}`, 'cost', 20);
+      view.hp[ev.from] -= ev.cost; renderStatus();
+      a.setMotion('walk', true); a.move(dir * dist); playSE(SE.dash, 0.5);
+      await sleep(360);
+      a.setMotion('swing', false); playSE(SE.sword, 0.75);
+      await sleep(300);
+      if (ev.mult > 1) playSE(SE.attack, 0.7);                  // 貯め後の攻撃は重い音を重ねる
+      if (!ev.blocked) playSE(SE.blow, 0.85);
+      if (ev.blocked) {
+        t.setMotion('guard', false); ring(ev.to); playSE(SE.guard, 0.8);
+        popText(ev.to, 'ガード！', 'def');
+        say(`${nameOf(ev.to)}は攻撃を防いだ！`);
+      } else {
+        t.setMotion('damage', false);
+        // 本物のEffekseerが使えればそれを、無ければCSSの斬撃を出す
+        const mir = ev.to === 0;                                   // 右側が受ける時は左右反転
+        if (!(playFX('slash', ev.to, { mirror: mir, dy: -15 }) && playFX('hit', ev.to, { mirror: mir }))) slash(ev.to);
+        flash(ev.to); shake(); playSE(SE.damage, 0.8);
+        pop(ev.to, String(ev.dmg), '');
+        view.hp[ev.to] -= ev.dmg; renderStatus();
+        if (ev.defFailed) { popText(ev.to, 'ガード失敗！', 'bad'); say(`${nameOf(ev.to)}の防御は失敗した！`); }
+        else say(`${nameOf(ev.to)}に${ev.dmg}のダメージ！`);
+      }
+      if (ev.crit.hit) {
+        await sleep(240);
+        popText(ev.from, 'クリティカル！', ''); playSE(SE.drain, 0.85);
+        drainFx(ev.to, ev.from); flash(ev.to);
+        pop(ev.to, `−${ev.crit.amount}`, 'drain', 10, 20);
+        setTimeout(() => pop(ev.from, `+${ev.crit.amount}`, 'heal', 0), 480 * speed);
+        say(`${nameOf(ev.from)}は${nameOf(ev.to)}から${ev.crit.amount}を奪った！`);
+        view.hp[ev.to] -= ev.crit.amount; view.hp[ev.from] += ev.crit.amount; renderStatus();
+      }
+      await sleep(520);
+      a.move(0); a.setMotion('walk', true);
+      await sleep(340);
+      a.idle(); t.idle();
+    } else if (ev.t === 'charge') {
+      const b = B[ev.who];
+      say(`${nameOf(ev.who)}は力を貯めた！`);
+      b.setMotion('chant', true); playSE(SE.charge, 0.8);
+      playFX('power', ev.who, { dy: -70 });                      // 足元から立ち上るので、キャラの足元に置く
+      pop(ev.who, `+${ev.gain}`, 'heal');
+      view.hp[ev.who] = Math.min(cfg.hp, view.hp[ev.who] + ev.gain); renderStatus();
+      if (ev.loaded) popText(ev.who, '次の攻撃×' + cfg.chargeMult, '');
+      else popText(ev.who, 'HP上限', 'def');
+      await sleep(760);
+      b.idle();
+    } else if (ev.t === 'guardIdle') {
+      const b = B[ev.who];
+      b.setMotion('guard', true);
+      say(`${nameOf(ev.who)}は身を守っている`);
+      await sleep(520);
+      b.idle();
+    } else if (ev.t === 'mirror') {
+      popText(0, `あいこ −${ev.amount}`, 'bad'); popText(1, `あいこ −${ev.amount}`, 'bad');
+      view.hp[0] -= ev.amount; view.hp[1] -= ev.amount; renderStatus();
+      say('あいこ！ 両者にペナルティ');
+      await sleep(620);
+    }
+  }
+
+  async function runRound(cmd) {
+    if (busy) return;
+    const r = PCB.resolve(state, cmd, Math.random, cfg);
+    await presentRound(cmd, r, null);
+  }
+
+  // 1ラウンドの結果(r)を演出する。finalState があれば、演出後にそれを状態にする（オンライン）。無ければ r を適用する。
+  async function presentRound(cmd, r, finalState) {
+    if (busy) return;
+    busy = true; skip = false; renderCommands();
+    view = { hp: state.hp.slice() };
+    hideTags();
+    showTags(cmd);
+    say('せーの！');
+    await sleep(900);
+    hideTags();
+    // 防御・貯めの待機モーションなど、同時に走るものは事前に状態を整える
+    for (const ev of r.events) await playEvent(ev);
+    // 結果を反映
+    view = null;
+    if (finalState) Object.assign(state, finalState); else PCB.apply(state, cmd, r);
+    pick = [null, null]; phase = 'p1';
+    renderStatus();
+    await sleep(520);
+    if (state.over) { await finish(); }
+    else {
+      B.forEach((b) => b.idle());
+      say('');
+      busy = false;
+      renderCommands();
+    }
+    if (mode === 'online' && typeof onlineAfterRound === 'function') onlineAfterRound();
+  }
+
+  async function finish() {
+    say('');
+    const res = state.result;
+    let text, cls;
+    if (res === 'draw') {
+      text = 'DRAW'; cls = 'draw';
+      B.forEach((b) => b.setMotion('dead', false));
+      playSE(ME.lose, 0.8);
+    } else {
+      const w = res, l = 1 - res;
+      B[l].setMotion('dying', false);
+      setTimeout(() => B[l].setMotion('dead', false), 700 * speed);
+      B[w].setMotion('victory', true);
+      if (mode === 'cpu' || mode === 'online') { text = w === 0 ? 'WIN!' : 'LOSE…'; cls = w === 0 ? 'win' : 'lose'; playMEwin(w === 0); }
+      else { text = `${nameOf(w)}の勝ち！`; cls = 'win'; playMEwin(true); }
+    }
+    await sleep(1100);
+    $('#bannerText').textContent = text; $('#bannerText').className = cls;
+    $('#banner').classList.add('on');
+    busy = false; renderCommands();
+  }
+  function playMEwin(win) {
+    if (bgm) { try { bgm.pause(); } catch (e) {} bgmOn = false; }
+    playSE(win ? ME.win : ME.lose, 0.9);
+  }
+
+  // ---------- 開始・再開 ----------
+  function startBattle() {
+    refreshSelect();
+    state = PCB.newState(cfg);
+    pick = [null, null]; phase = 'p1'; busy = false; skip = false;
+    $('#banner').classList.remove('on');
+    B[0].setActor(chars[0]); B[1].setActor(chars[1]);
+    B.forEach((b) => b.move(0));
+    pickBg();
+    renderStatus(); renderCommands(); say('');
+    $('#select').style.display = 'none';
+    const bt = $('#battle'); bt.hidden = false; bt.style.display = 'grid';
+    fit();
+  }
+  $('#btnStart').addEventListener('click', () => {
+    mode = $('#mode').value; diff = $('#diff').value;
+    startBattle();
+    $('#startOverlay').style.display = 'grid';
+  });
+  $('#btnGo').addEventListener('click', () => {
+    $('#startOverlay').style.display = 'none';
+    startBGM();
+    say('バトル開始！');
+    setTimeout(() => say(''), 900);
+  });
+  $('#btnAgain').addEventListener('click', () => {
+    if (mode === 'online') { onlineRematch(); return; }
+    startBattle(); $('#startOverlay').style.display = 'none'; startBGM();
+  });
+  $('#btnMenu').addEventListener('click', () => {
+    stopBGM(); busy = false;
+    if (mode === 'online') onlineLeave();
+    $('#battle').hidden = true; $('#battle').style.display = 'none';
+    $('#select').style.display = 'grid';
+  });
+  $('#btnMute').addEventListener('click', () => {
+    muted = !muted; $('#btnMute').textContent = muted ? '音：OFF' : '音：ON';
+    if (bgm) bgm.muted = muted;
+  });
+  $('#btnSpeed').addEventListener('click', () => {
+    speed = speed === 1 ? 0.5 : 1; $('#btnSpeed').textContent = speed === 1 ? '演出：通常' : '演出：はやい';
+  });
+  // ステージをタップすると演出を飛ばす
+  $('#stageWrap').addEventListener('click', () => { if (busy) skip = true; });
+
+
+  // ---------- オンライン対戦（Firebase匿名認証＋Firestore。制約ワードウルフと同じ方式） ----------
+  // 部屋ごとに1つのドキュメントを共有する。ホスト（部屋を作った人）が結果を計算して書き込み、双方がそれを演出する。
+  // 手は「ハッシュを先に出し、全員分そろってから中身を公開する」ので、相手の手を見てから選ぶことはできない。
+  const ONLINE = { api: null, seat: -1, code: '', unsub: null, room: null, startedRound: 0, nextShow: 1,
+                   myPick: null, name: '', myChar: 1, qrLib: null, resolving: false, dirty: false, started: false };
+
+  // 同期的なSHA-256（http接続でも動くように、SubtleCryptoを使わない）
+  const sha256 = (() => {
+    const primes = []; for (let n = 2; primes.length < 64; n++) if (primes.every((p) => n % p)) primes.push(n);
+    const frac = (x) => ((x - Math.floor(x)) * 4294967296) >>> 0;
+    const K = primes.map((p) => frac(Math.cbrt(p)));
+    const H0 = primes.slice(0, 8).map((p) => frac(Math.sqrt(p)));
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    return (str) => {
+      const bytes = new TextEncoder().encode(str);
+      const l = bytes.length, total = ((l + 9 + 63) >> 6) << 6;
+      const buf = new Uint8Array(total); buf.set(bytes); buf[l] = 0x80;
+      const dv = new DataView(buf.buffer);
+      dv.setUint32(total - 4, (l * 8) >>> 0); dv.setUint32(total - 8, Math.floor(l * 8 / 4294967296));
+      const hh = H0.slice(), w = new Uint32Array(64);
+      for (let o = 0; o < total; o += 64) {
+        for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + i * 4);
+        for (let i = 16; i < 64; i++) {
+          const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+          const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+          w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+        }
+        let a = hh[0], b = hh[1], c = hh[2], d = hh[3], e = hh[4], f = hh[5], g = hh[6], hx = hh[7];
+        for (let i = 0; i < 64; i++) {
+          const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25), ch = (e & f) ^ (~e & g);
+          const t1 = (hx + S1 + ch + K[i] + w[i]) >>> 0;
+          const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22), mj = (a & b) ^ (a & c) ^ (b & c);
+          const t2 = (S0 + mj) >>> 0;
+          hx = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+        }
+        hh[0] = (hh[0] + a) >>> 0; hh[1] = (hh[1] + b) >>> 0; hh[2] = (hh[2] + c) >>> 0; hh[3] = (hh[3] + d) >>> 0;
+        hh[4] = (hh[4] + e) >>> 0; hh[5] = (hh[5] + f) >>> 0; hh[6] = (hh[6] + g) >>> 0; hh[7] = (hh[7] + hx) >>> 0;
+      }
+      return hh.map((x) => x.toString(16).padStart(8, '0')).join('');
+    };
+  })();
+  const commitHash = (cmd, nonce, round, code) => sha256(code + ':' + round + ':' + cmd + ':' + nonce);
+  const randHex = (n) => Array.from({ length: n }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+
+  const FB = 'https://www.gstatic.com/firebasejs/11.6.1/';
+  async function fbInit() {
+    if (ONLINE.api) return ONLINE.api;
+    const conf = window.PCB_FIREBASE_CONFIG;
+    if (!conf || !conf.apiKey) throw new Error('オンライン対戦の接続設定がありません（firebase-config.js）');
+    const [appM, authM, fsM] = await Promise.all([import(FB + 'firebase-app.js'), import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')]);
+    const app = appM.initializeApp(conf, 'pcb');
+    const auth = authM.getAuth(app), db = fsM.getFirestore(app);
+    const user = await new Promise((res, rej) => {
+      authM.onAuthStateChanged(auth, (u) => { if (u) res(u); else authM.signInAnonymously(auth).catch(rej); }, rej);
+    });
+    const appId = window.PCB_APP_ID || 'paycostbattle';
+    const ref = (code) => fsM.doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code);
+    ONLINE.api = {
+      uid: user.uid,
+      create: (code, data) => fsM.setDoc(ref(code), data),
+      get: async (code) => { const s = await fsM.getDoc(ref(code)); return s.exists() ? s.data() : null; },
+      // fn(room) が room を返せば書き込み、nullを返せば何もしない（競合時はFirestoreが再試行する）
+      mutate: (code, fn) => fsM.runTransaction(db, async (tx) => {
+        const s = await tx.get(ref(code));
+        if (!s.exists()) throw new Error('部屋が見つかりません');
+        const next = fn(JSON.parse(JSON.stringify(s.data())));
+        if (next) tx.set(ref(code), next);
+        return next;
+      }),
+      subscribe: (code, cb, err) => fsM.onSnapshot(ref(code), (s) => cb(s.exists() ? s.data() : null), err),
+    };
+    return ONLINE.api;
+  }
+
+  const onMsg = (t) => { $('#onlineMsg').textContent = t || ''; };
+  const roomUrl = (code) => `${location.origin}${location.pathname}?room=${code}`;
+  function newCode() {
+    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    return Array.from({ length: 4 }, () => A[Math.floor(Math.random() * A.length)]).join('');
+  }
+  // 画面の視点：自分を常に右側（0番）にする。ホストが0番、ゲストが1番なので、ゲストは入れ替えて見る
+  const swapBy = (a, s) => (s === 1 ? [a[1], a[0]] : a.slice());
+  function viewState(rs, seat) {
+    const res = rs.result;
+    return { hp: swapBy(rs.hp, seat), last: swapBy(rs.last, seat), ch: swapBy(rs.ch, seat), ds: swapBy(rs.ds, seat),
+             round: rs.round, over: rs.over, result: (res === 'draw' || res === null || seat === 0) ? res : 1 - res, hist: [[], []] };
+  }
+  function viewEvents(evs, seat) {
+    if (seat === 0) return evs;
+    return evs.map((e) => {
+      if (e.t === 'attack') return Object.assign({}, e, { from: 1 - e.from, to: 1 - e.to });
+      if (e.t === 'charge' || e.t === 'guardIdle') return Object.assign({}, e, { who: 1 - e.who });
+      return e;
+    });
+  }
+  const cleanState = (S) => ({ hp: S.hp, last: S.last, ch: S.ch, ds: S.ds, round: S.round, over: S.over, result: S.result });
+
+  async function ensureQr() {
+    if (ONLINE.qrLib) return ONLINE.qrLib;
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js';
+      s.onload = res; s.onerror = () => rej(new Error('QR'));
+      document.head.appendChild(s);
+    });
+    ONLINE.qrLib = window.qrcode;
+    return ONLINE.qrLib;
+  }
+  async function drawQr(text) {
+    const cv = $('#roomQr'), g = cv.getContext('2d');
+    try {
+      const lib = await ensureQr();
+      const qr = lib(0, 'M'); qr.addData(text); qr.make();
+      const n = qr.getModuleCount(), cell = Math.floor(cv.width / (n + 2));
+      const off = Math.floor((cv.width - cell * n) / 2);
+      g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.fillStyle = '#000';
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) g.fillRect(off + c * cell, off + r * cell, cell, cell);
+    } catch (e) {
+      g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+      g.fillStyle = '#333'; g.font = '14px sans-serif'; g.fillText('QRを作れませんでした', 14, 90);
+    }
+  }
+
+  // ----- 部屋に入る・作る -----
+  async function onlineCreate() {
+    try {
+      onMsg('接続中…');
+      const api = await fbInit();
+      const name = ($('#onName').value || 'プレイヤー').trim().slice(0, 12);
+      ONLINE.name = name; ONLINE.myChar = chars[0];
+      let code = '', tries = 0;
+      while (tries++ < 8) { code = newCode(); if (!(await api.get(code))) break; }
+      const room = { code, v: 1, createdAt: Date.now(), phase: 'lobby',
+                     host: { uid: api.uid, name, char: ONLINE.myChar }, guest: null,
+                     cfg: Object.assign({}, cfg), state: null, commits: [null, null], reveals: [null, null],
+                     last: null, rematch: [false, false], bg: '' };
+      await api.create(code, room);
+      await onlineEnter(code);
+    } catch (e) { onMsg('部屋を作れませんでした：' + e.message); }
+  }
+  async function onlineJoin(codeIn) {
+    try {
+      const code = (codeIn || $('#roomInput').value || '').trim().toUpperCase();
+      if (!code) { onMsg('部屋コードを入れてください'); return; }
+      onMsg('接続中…');
+      const api = await fbInit();
+      const name = ($('#onName').value || 'プレイヤー').trim().slice(0, 12);
+      ONLINE.name = name; ONLINE.myChar = chars[0];
+      await api.mutate(code, (room) => {
+        if (room.host.uid === api.uid) return null;                                   // 自分の部屋（再入室）
+        if (room.guest && room.guest.uid === api.uid) return null;                    // 再入室
+        if (room.guest) throw new Error('この部屋は満員です');
+        room.guest = { uid: api.uid, name, char: ONLINE.myChar };
+        return room;
+      });
+      await onlineEnter(code);
+    } catch (e) { onMsg('入室できませんでした：' + e.message); }
+  }
+  async function onlineEnter(code) {
+    const api = ONLINE.api;
+    ONLINE.code = code; ONLINE.started = false; ONLINE.nextShow = 1; ONLINE.myPick = null; ONLINE.resolving = false;
+    if (ONLINE.unsub) ONLINE.unsub();
+    $('#lobby').hidden = false;
+    $('#roomCodeText').textContent = code;
+    const url = roomUrl(code);
+    $('#roomUrl').value = url;
+    drawQr(url);
+    ONLINE.unsub = api.subscribe(code, onRoom, (e) => onMsg('接続エラー：' + (e && e.message || e)));
+  }
+  function onlineLeave() {
+    if (ONLINE.unsub) { try { ONLINE.unsub(); } catch (e) {} ONLINE.unsub = null; }
+    ONLINE.started = false; ONLINE.room = null;
+  }
+
+  // ----- 部屋の更新を受け取る -----
+  function onRoom(room) {
+    ONLINE.room = room;
+    if (!room) { onMsg('部屋が見つかりません'); return; }
+    const api = ONLINE.api;
+    ONLINE.seat = room.host.uid === api.uid ? 0 : (room.guest && room.guest.uid === api.uid ? 1 : -1);
+    if (ONLINE.seat < 0) { onMsg('この部屋の参加者ではありません'); return; }
+    renderLobby(room);
+    if (room.phase !== 'playing') return;
+    if (busy) { ONLINE.dirty = true; return; }       // 演出中は、終わってから反映する
+    onlineStep(room);
+  }
+  function renderLobby(room) {
+    const me = ONLINE.seat === 0 ? room.host : room.guest, op = ONLINE.seat === 0 ? room.guest : room.host;
+    $('#lobbyPlayers').innerHTML =
+      '<div>あなた：<b>' + esc(me ? me.name : '') + '</b>（キャラ' + (me ? me.char : '') + '）' + (ONLINE.seat === 0 ? '　[ホスト]' : '') + '</div>' +
+      '<div>相手：<b>' + (op ? esc(op.name) : '…（入室待ち）') + '</b>' + (op ? '（キャラ' + op.char + '）' : '') + '</div>';
+    const canStart = ONLINE.seat === 0 && !!room.guest && room.phase === 'lobby';
+    $('#btnOnlineStart').disabled = !canStart;
+    $('#btnOnlineStart').textContent = ONLINE.seat === 0 ? 'バトル開始' : 'ホストが開始するのを待っています';
+    if (room.phase === 'lobby') onMsg(room.guest ? (ONLINE.seat === 0 ? '相手が入りました。「バトル開始」を押してください。' : '入室しました。ホストの開始を待っています。') : '相手の入室を待っています…');
+  }
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  async function onlineStart() {
+    try {
+      const api = ONLINE.api;
+      const bgs = BATTLEBACKS;
+      await api.mutate(ONLINE.code, (room) => {
+        if (room.host.uid !== api.uid || !room.guest) return null;
+        room.phase = 'playing';
+        room.state = { hp: [room.cfg.hp, room.cfg.hp], last: [null, null], ch: [false, false], ds: [0, 0], round: 1, over: false, result: null };
+        room.commits = [null, null]; room.reveals = [null, null]; room.last = null; room.rematch = [false, false];
+        room.bg = bgs[Math.floor(Math.random() * bgs.length)];
+        return room;
+      });
+    } catch (e) { onMsg('開始できませんでした：' + e.message); }
+  }
+
+  // ----- 戦闘の進行 -----
+  function startOnlineBattle(room) {
+    ONLINE.started = true; ONLINE.myPick = null; ONLINE.resolving = false;
+    Object.assign(cfg, room.cfg);
+    const me = ONLINE.seat === 0 ? room.host : room.guest, op = ONLINE.seat === 0 ? room.guest : room.host;
+    mode = 'online'; onlineNames = [me.name, op.name]; chars = [me.char, op.char];
+    state = viewState(room.state, ONLINE.seat);
+    ONLINE.nextShow = room.state.round;
+    pick = [null, null]; phase = 'p1'; busy = false; skip = false;
+    $('#banner').classList.remove('on');
+    B[0].setActor(chars[0]); B[1].setActor(chars[1]);
+    B.forEach((b) => b.move(0));
+    setBg(room.bg || BATTLEBACKS[0]);
+    renderStatus(); say('');
+    $('#select').style.display = 'none';
+    const bt = $('#battle'); bt.hidden = false; bt.style.display = 'grid';
+    $('#startOverlay').style.display = 'grid';
+    fit();
+    renderCommands();
+  }
+
+  function onlineStep(room) {
+    if (!ONLINE.started) startOnlineBattle(room);
+    // 再戦：新しい対戦が始まった（ラウンド1・結果なし）
+    if (room.state.round === 1 && !room.last && ONLINE.nextShow > 1) { startOnlineBattle(room); return; }
+    const seat = ONLINE.seat;
+    // 1) 解決済みのラウンドがあれば演出する
+    if (room.last && room.last.round >= ONLINE.nextShow && room.last.round === state.round) {
+      const L = room.last;
+      const cmds = swapBy(L.cmds, seat);
+      const r = { events: viewEvents(L.events, seat), hp: swapBy(L.hp, seat) };
+      ONLINE.nextShow = L.round + 1; ONLINE.myPick = null;
+      presentRound(cmds, r, viewState(room.state, seat));
+      return;
+    }
+    if (state.over) { renderCommands(); onlineHostRematchCheck(room); return; }
+    // 2) 両者の手がそろったら、自分の手を公開する
+    if (room.commits[0] && room.commits[1]) {
+      if (ONLINE.myPick && ONLINE.myPick.round === room.state.round && !room.reveals[seat]) {
+        const mp = ONLINE.myPick;
+        ONLINE.api.mutate(ONLINE.code, (rm) => {
+          if (rm.state.round !== mp.round || rm.reveals[seat]) return null;
+          rm.reveals[seat] = { cmd: mp.cmd, nonce: mp.nonce };
+          return rm;
+        }).catch(() => {});
+      }
+    }
+    // 3) ホストは、両者の公開がそろったら結果を計算して書き込む
+    if (seat === 0 && room.reveals[0] && room.reveals[1] && !ONLINE.resolving) {
+      ONLINE.resolving = true;
+      const round = room.state.round, code = ONLINE.code;
+      ONLINE.api.mutate(code, (rm) => {
+        if (rm.state.round !== round || !rm.reveals[0] || !rm.reveals[1]) return null;
+        const c = rm.cfg;
+        const cmds = [0, 1].map((i) => {
+          const ok = commitHash(rm.reveals[i].cmd, rm.reveals[i].nonce, round, code) === rm.commits[i];
+          const al = PCB.allowed(rm.state.last[i], c);
+          return (ok && al.includes(rm.reveals[i].cmd)) ? rm.reveals[i].cmd : al[0];   // 不正な手は、選べる最初の手にする
+        });
+        const S = Object.assign({}, rm.state, { hist: [[], []] });
+        const r = PCB.resolve(S, cmds, Math.random, c);
+        PCB.apply(S, cmds, r);
+        rm.last = { round, cmds, events: r.events, hp: r.hp };
+        rm.state = cleanState(S);
+        rm.commits = [null, null]; rm.reveals = [null, null];
+        if (S.over) rm.phase = 'playing';
+        return rm;
+      }).catch((e) => onMsg('結果の計算に失敗：' + e.message)).finally(() => { ONLINE.resolving = false; });
+    }
+    renderCommands();
+  }
+  function onlineAfterRound() {
+    // 演出が終わった。演出中に届いた更新があれば反映する
+    if (ONLINE.dirty && ONLINE.room) { ONLINE.dirty = false; onlineStep(ONLINE.room); }
+    else if (ONLINE.room) onlineStep(ONLINE.room);
+  }
+
+  // ----- 自分の手の選択 -----
+  function renderOnlineCommands(w, h) {
+    const room = ONLINE.room;
+    if (!room) { w.innerHTML = '<div class="note">接続中…</div>'; return; }
+    const committed = room.commits && room.commits[ONLINE.seat];
+    const waiting = ONLINE.myPick && ONLINE.myPick.round === state.round && committed;
+    if (waiting) {
+      const d = document.createElement('div'); d.className = 'cover';
+      d.textContent = (room.commits[1 - ONLINE.seat]) ? '手を公開しています…' : '決定しました。相手の手を待っています…';
+      w.appendChild(d);
+      return;
+    }
+    w.appendChild(h(`${nameOf(0)}の手を選ぶ（${nameOf(1)}と同時に公開されます）`));
+    w.appendChild(cmdGroup(0, onlinePick, null));
+  }
+  async function onlinePick(c) {
+    const round = state.round, code = ONLINE.code, seat = ONLINE.seat;
+    const nonce = randHex(10);
+    ONLINE.myPick = { cmd: c, nonce, round };
+    const hash = commitHash(c, nonce, round, code);
+    renderCommands();
+    try {
+      await ONLINE.api.mutate(code, (rm) => {
+        if (rm.state.round !== round || rm.commits[seat]) return null;
+        rm.commits[seat] = hash;
+        return rm;
+      });
+    } catch (e) { ONLINE.myPick = null; onMsg('送信に失敗しました。もう一度選んでください'); renderCommands(); }
+  }
+
+  // ----- もう一度 -----
+  async function onlineRematch() {
+    try {
+      const seat = ONLINE.seat;
+      await ONLINE.api.mutate(ONLINE.code, (rm) => { rm.rematch[seat] = true; return rm; });
+      $('#bannerText').textContent = '相手を待っています…';
+    } catch (e) { /* 無視 */ }
+  }
+  function onlineHostRematchCheck(room) {
+    if (ONLINE.seat !== 0 || !room.rematch || !(room.rematch[0] && room.rematch[1])) return;
+    ONLINE.api.mutate(ONLINE.code, (rm) => {
+      if (!(rm.rematch[0] && rm.rematch[1])) return null;
+      rm.state = { hp: [rm.cfg.hp, rm.cfg.hp], last: [null, null], ch: [false, false], ds: [0, 0], round: 1, over: false, result: null };
+      rm.commits = [null, null]; rm.reveals = [null, null]; rm.last = null; rm.rematch = [false, false];
+      rm.bg = BATTLEBACKS[Math.floor(Math.random() * BATTLEBACKS.length)];
+      return rm;
+    }).catch(() => {});
+  }
+
+  $('#btnCreateRoom').addEventListener('click', onlineCreate);
+  $('#btnJoinRoom').addEventListener('click', () => onlineJoin());
+  $('#btnOnlineStart').addEventListener('click', onlineStart);
+  $('#btnCopy').addEventListener('click', async () => {
+    const t = $('#roomUrl').value;
+    try { await navigator.clipboard.writeText(t); onMsg('URLをコピーしました'); }
+    catch (e) { $('#roomUrl').select(); onMsg('URLを選択しました。コピーしてください'); }
+  });
+  $('#roomInput').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); });
+  // 自分のキャラを変えたら、部屋にも反映する
+  $('#faces1').addEventListener('click', () => {
+    if (mode !== 'online' || !ONLINE.code || !ONLINE.api) return;
+    const n = chars[0]; ONLINE.myChar = n;
+    const seat = ONLINE.seat;
+    if (ONLINE.room && ONLINE.room.phase === 'lobby') {
+      ONLINE.api.mutate(ONLINE.code, (rm) => { const p = seat === 0 ? rm.host : rm.guest; if (!p) return null; p.char = n; return rm; }).catch(() => {});
+    }
+  });
+  // URLに ?room=XXXX があれば、オンライン対戦の入室画面を開く（QRから来た人向け）
+  (function autoJoin() {
+    const code = new URLSearchParams(location.search).get('room');
+    if (!code) return;
+    $('#mode').value = 'online';
+    $('#roomInput').value = code.toUpperCase();
+    setTimeout(() => { refreshSelect(); onMsg('名前を入れて「部屋に参加」を押してください（部屋コード ' + code.toUpperCase() + '）'); }, 0);
+  })();
+
+  // 初期化
+  initFX();
+  chars = [1, 5];
+  buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
+  refreshSelect();
+  // 外のスクリプトから画面を直接開けるようにする（動作確認用）
+  window.__pcb = { sha256, ONLINE, startBattle, runRound, get state() { return state; }, EFX, playFX };
+})();
+</script>
+</body>
+</html>
