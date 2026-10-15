@@ -360,6 +360,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
 <script src="engine.js"></script>
 <script src="firebase-config.js"></script>
+
 <script>
 (() => {
   'use strict';
@@ -386,8 +387,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   } catch (e) { /* 無視 */ }
   window.PCB_ASSETS = window.PCB_ASSETS || {};
   const AS = (key) => window.PCB_ASSETS[key] || (SRC + key);
-  const IMG = (n) => `img/character/Actor1_${n}.png`;            // SVアクターのシート（9列×6行、64px）
-  const FACE = 'img/face/Actor1.png';                            // 顔グラ（4列×2行、144px）
+  const NCHAR = 16;                                              // キャラ数（1〜8＝通常、9〜16＝SF版）
+  const IMG = (n) => n > 8 ? `img/character/SF_Actor1_${n - 8}.png` : `img/character/Actor1_${n}.png`;            // SVアクターのシート（9列×6行、64px）
+  const FACE = (n) => n > 8 ? 'img/face/SF_Actor1.png' : 'img/face/Actor1.png';                            // 顔グラ（4列×2行、144px）
   const WEAPON = 'img/Weapon/Weapons1.png';                      // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
   const WEAPON_ID = 2;                                           // 1=短剣、2=剣、3=フレイル、4=斧、5=ムチ、6=杖 ／ 7=弓…（MZのweaponImageId）
   const BATTLEBACKS = ['Grassland', 'Desert', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
@@ -551,7 +553,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- 選択画面 ----------
   let cpuPick = 0;                      // CPU戦のCPUのキャラ。0＝ランダム（バトルごとに変わる）
-  const randomOther = (n) => { let r; do { r = 1 + Math.floor(Math.random() * 8); } while (r === n); return r; };
+  const randomOther = (n) => { let r; do { r = 1 + Math.floor(Math.random() * NCHAR); } while (r === n); return r; };
   // そのキャラ(n)を、プレイヤー(idx)が選べないか（同じキャラは選べない）
   function isTaken(idx, n) {
     if (mode === 'hot') return chars[1 - idx] === n;
@@ -569,13 +571,13 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       r.addEventListener('click', () => { cpuPick = 0; buildFaces($('#faces2'), 1); });
       el.appendChild(r);
     }
-    for (let n = 1; n <= 8; n++) {
+    for (let n = 1; n <= NCHAR; n++) {
       const b = document.createElement('button');
       const taken = isTaken(idx, n);
       const selected = cpuSide ? cpuPick === n : chars[idx] === n;
       b.type = 'button'; b.className = 'face' + (selected ? ' sel' : '') + (taken ? ' taken' : '');
-      const col = (n - 1) % 4, row = Math.floor((n - 1) / 4);
-      b.style.backgroundImage = `url(${AS(FACE)})`;
+      const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
+      b.style.backgroundImage = `url(${AS(FACE(n))})`;
       b.style.backgroundSize = '400% 200%';
       b.style.backgroundPosition = `${col * 100 / 3}% ${row * 100}%`;
       b.style.backgroundColor = `hsl(${n * 47 % 360} 55% 38%)`;   // 画像が無い時の代用色
@@ -1398,7 +1400,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         if (room.guest) throw new Error('この部屋は満員です');
         // 同じキャラは選べない：ホストと同じなら、空いている最初のキャラにする
         joinedChar = ONLINE.myChar;
-        if (room.host.char === joinedChar) { for (let n = 1; n <= 8; n++) if (n !== room.host.char) { joinedChar = n; break; } }
+        if (room.host.char === joinedChar) { for (let n = 1; n <= NCHAR; n++) if (n !== room.host.char) { joinedChar = n; break; } }
         room.guest = { uid: api.uid, name, char: joinedChar };
         return room;
       });
@@ -1459,8 +1461,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // 顔グラ（素材が無い時は色だけ）
   function faceCss(n) {
-    const col = (n - 1) % 4, row = Math.floor((n - 1) / 4);
-    return `background-image:url(${AS(FACE)});background-size:400% 200%;background-position:${col * 100 / 3}% ${row * 100}%;background-color:hsl(${n * 47 % 360} 55% 38%)`;
+    const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
+    return `background-image:url(${AS(FACE(n))});background-size:400% 200%;background-position:${col * 100 / 3}% ${row * 100}%;background-color:hsl(${n * 47 % 360} 55% 38%)`;
   }
   // ロビーの参加者表示。入力欄は作り直さない（名前を打っている最中に消えないように）
   function renderPlayers(me, op, room) {
