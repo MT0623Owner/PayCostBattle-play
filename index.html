@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PayCostBattle</title>
+<meta name="description" content="HPをコストにして戦う、読み合いバトル。QRコードを読み取って、CPUと対戦できます。">
+<meta property="og:title" content="PayCostBattle">
+<meta property="og:description" content="HPをコストにして戦う、読み合いバトル。CPUと対戦できます。">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* 配置：上段に二人の状態、中段に手の選択、下段に直近の処理と履歴。盤面を一画面で読む作り */
+:root {
+  --bg: #eceff2;
+  --surface: #ffffff;
+  --ink: #16212b;
+  --muted: #5d6b78;
+  --line: #d3dae0;
+  --atk: #b3263e;
+  --chg: #1f7a4d;
+  --def: #2a5aa6;
+  --atk-soft: #f7e4e8;
+  --chg-soft: #dff0e6;
+  --def-soft: #dfe8f6;
+  --bar: #16212b;
+  --warn: #b45309;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171d; --surface: #1a232c; --ink: #e8edf1; --muted: #93a1ad; --line: #2c3945;
+    --atk: #f0768a; --chg: #5cc58f; --def: #7aa7ee;
+    --atk-soft: #3a1f27; --chg-soft: #1c3226; --def-soft: #1f2c42;
+    --bar: #e8edf1; --warn: #f0b45a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171d; --surface: #1a232c; --ink: #e8edf1; --muted: #93a1ad; --line: #2c3945;
+  --atk: #f0768a; --chg: #5cc58f; --def: #7aa7ee;
+  --atk-soft: #3a1f27; --chg-soft: #1c3226; --def-soft: #1f2c42;
+  --bar: #e8edf1; --warn: #f0b45a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); margin: 0; line-height: 1.55; }
+.app { max-width: 880px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 40px; display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px; }
+h1 { font-size: 1.5rem; margin: 0; letter-spacing: .02em; }
+.sub { color: var(--muted); font-size: .8rem; margin: 2px 0 0; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+select, button, input { font: inherit; color: inherit; }
+select, .btn { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-height: 36px; }
+.btn { cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 700; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 3px solid var(--def); outline-offset: 2px; }
+
+.arena { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.fighter { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+.fighter h2 { margin: 0; font-size: .95rem; color: var(--muted); font-weight: 500; }
+.hp { font-family: var(--font-num); font-size: 2.6rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.hp small { font-size: .9rem; color: var(--muted); font-weight: 500; }
+.track { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; margin-block: 8px 10px; }
+.fill { height: 100%; background: var(--bar); border-radius: 6px; transition: width .25s ease; }
+.fill.low { background: var(--atk); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: .75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.chip.atk { background: var(--atk-soft); color: var(--atk); border-color: transparent; }
+.chip.chg { background: var(--chg-soft); color: var(--chg); border-color: transparent; }
+.chip.def { background: var(--def-soft); color: var(--def); border-color: transparent; }
+.chip.warn { color: var(--warn); border-color: var(--warn); }
+.turn { text-align: center; color: var(--muted); font-size: .85rem; }
+
+.controls { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 12px; }
+.controls h3 { margin: 0; font-size: .9rem; color: var(--muted); font-weight: 500; }
+.groups { display: grid; gap: 14px; grid-template-columns: 1fr; }
+.groups.two { grid-template-columns: 1fr 1fr; }
+.cmds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cmd { text-align: left; border-radius: 10px; border: 2px solid var(--line); background: var(--surface); padding: 10px; cursor: pointer; display: grid; gap: 4px; min-width: 0; }
+.cmd .name { font-weight: 700; font-size: 1.05rem; }
+.cmd .info { font-size: .74rem; color: var(--muted); line-height: 1.4; }
+.cmd.atk { border-color: var(--atk); } .cmd.atk .name { color: var(--atk); }
+.cmd.chg { border-color: var(--chg); } .cmd.chg .name { color: var(--chg); }
+.cmd.def { border-color: var(--def); } .cmd.def .name { color: var(--def); }
+.cmd:hover:not(:disabled) { background: var(--bg); }
+.cmd.sel.atk { background: var(--atk-soft); } .cmd.sel.chg { background: var(--chg-soft); } .cmd.sel.def { background: var(--def-soft); }
+.cmd:disabled { cursor: not-allowed; border-color: var(--line); opacity: .5; }
+.cmd:disabled .name { color: var(--muted); }
+.cover { text-align: center; padding: 18px 8px; display: grid; gap: 10px; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.panel h3 { margin: 0 0 8px; font-size: .9rem; color: var(--muted); font-weight: 500; }
+.round-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.round-head .vs { color: var(--muted); font-size: .85rem; }
+ul.lines { margin: 0; padding-left: 1.1em; display: grid; gap: 2px; }
+.hpline { font-family: var(--font-num); font-size: .85rem; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+.banner { padding: 14px; border-radius: 12px; text-align: center; font-weight: 700; font-size: 1.1rem; border: 2px solid var(--ink); }
+.banner.win { background: var(--chg-soft); color: var(--chg); border-color: var(--chg); }
+.banner.lose { background: var(--atk-soft); color: var(--atk); border-color: var(--atk); }
+.banner.draw { background: var(--def-soft); color: var(--def); border-color: var(--def); }
+details.log summary, details.settings summary { cursor: pointer; font-size: .9rem; color: var(--muted); }
+.logitem { border-top: 1px solid var(--line); padding-block: 8px; font-size: .85rem; }
+.logitem b { font-family: var(--font-num); }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; margin-top: 10px; }
+.settings-grid label { display: grid; gap: 2px; font-size: .78rem; color: var(--muted); }
+.settings-grid input { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 34px; font-family: var(--font-num); color: var(--ink); }
+.note { font-size: .78rem; color: var(--muted); margin: 8px 0 0; }
+@media (max-width: 560px) {
+  .arena { grid-template-columns: 1fr; }
+  .groups.two { grid-template-columns: 1fr; }
+  .hp { font-size: 2.1rem; }
+  .cmd .info { font-size: .7rem; }
+}
+@media (prefers-reduced-motion: reduce) { .fill { transition: none; } }
+details.howto summary { cursor: pointer; font-weight: 700; }
+details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: .88rem; }
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>PayCostBattle</h1>
+      <p class="sub">HPをコストにして戦う、読み合いバトル。CPUと対戦できます。</p>
+    </div>
+    <div class="toolbar">
+      <label class="sub" for="diff">CPUの強さ</label>
+      <select id="diff" aria-label="CPUの強さ">
+        <option value="easy">かんたん</option>
+        <option value="normal" selected>ふつう</option>
+        <option value="hard">つよい</option>
+      </select>
+      <button class="btn primary" id="newgame" type="button">新しい対戦</button>
+      <select id="mode" hidden aria-hidden="true"><option value="cpu">CPU</option></select>
+      <select id="preset" hidden aria-hidden="true"><option value="base">base</option></select>
+    </div>
+  </header>
+
+  <details class="panel howto">
+    <summary>あそびかた</summary>
+    <ul>
+      <li>HPがそのまま「コスト」。HPが0になった方の負けです。</li>
+      <li>毎ラウンド、お互いに同時に1つ選びます。</li>
+      <li><b>攻撃</b>：コスト−5を払って、相手に10ダメージ。</li>
+      <li><b>貯める</b>：HPが+5。次の攻撃が2倍になります（実際に回復できた時だけ）。</li>
+      <li><b>防御</b>：コストなしで相手の攻撃を防ぎます。ただし連続で使うほど成功率が下がります（100→75→50→25→0％）。失敗すると通常どおりダメージを受けます。</li>
+      <li>防御の次は「貯める」を選べません。一度攻撃を挟みます。</li>
+      <li>お互いに同じ手を出すと（あいこ）、両者−2です。</li>
+      <li>攻撃は一定確率でクリティカル。ダメージに加えて、相手から5を奪います。HPが相手より低いほど出やすくなります。</li>
+    </ul>
+  </details>
+
+  <div id="banner"></div>
+  <section class="arena" id="arena" aria-label="状態"></section>
+  <div class="turn" id="turn"></div>
+  <section class="controls" id="controls" aria-label="手の選択"></section>
+  <section class="panel" id="result" aria-label="直近の結果"></section>
+
+  <details class="panel log" id="logwrap"><summary>これまでの履歴</summary><div id="log"></div></details>
+
+  <details class="panel settings" hidden>
+    <summary>ルールの数値を変える</summary>
+    <div class="settings-grid" id="settings"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" id="resetcfg" type="button">既定値に戻す</button>
+    </div>
+  </details>
+</div>
+
+<script>
+(() => {
+  // 既定＝初期版＋改良1＋クリティカル（ドレイン型・HP差補正あり）（2026-10-15）。
+  // 先攻後攻なしの完全同時処理／防御に成功率（連続で低下・失敗は通常ダメージ）／攻撃時にクリティカル（相手−5・自分+5のドレイン）。
+  const DEF = {
+    hp: 100, attackCost: 5, damage: 10, heal: 5, drain: 5, mirror: 2,
+    critBase: 0.10, critK: 0.008, critCap: 0.50,
+    defStep: 0.25, defGrace: 1, failDrainUnit: 0, failDrainCap: 0, chargeMult: 2,
+    noDefAfterCharge: 0, classic: 0, failCrit: 0
+  };
+  // プリセット：base＝現行（改良1＋クリティカル）。noCrit＝改良1（クリティカルなし）。classic＝初期版（先攻あり・完全防御）。planB／short＝同日中に検討した発展版
+  const PRESETS = {
+    base: { patch: {} },
+    noCrit: { patch: { critBase: 0, critK: 0, critCap: 0, mirror: 0 } },
+    classic: { patch: { defStep: 0, classic: 1, critBase: 0, critK: 0, critCap: 0, mirror: 0 } },
+    planB: { patch: { hp: 150, damage: 8, mirror: 2, critBase: 0.10, critK: 0.008, critCap: 0.50, defStep: 0.25, defGrace: 2, failDrainUnit: 3, failDrainCap: 15, noDefAfterCharge: 1, classic: 0, failCrit: 1 } },
+    short: { patch: { hp: 100, damage: 10, mirror: 2, critBase: 0.10, critK: 0.008, critCap: 0.50, defStep: 0.25, defGrace: 1, failDrainUnit: 5, failDrainCap: 25, noDefAfterCharge: 1, classic: 0, failCrit: 1 } }
+  };
+  const LABELS = {
+    hp: ['初期HP・上限', 1], attackCost: ['攻撃のコスト', 1], damage: ['攻撃ダメージ', 1], heal: ['貯めるの回復量', 1],
+    drain: ['ドレイン量（通常）', 1], mirror: ['同じ手のペナルティ', 1], critBase: ['クリティカル基本率', 0.01],
+    critK: ['HP差1あたりの上昇', 0.001], critCap: ['クリティカル率の上限', 0.01], defStep: ['防御の成功率低下／回', 0.01],
+    defGrace: ['防御が100％で通る連続回数', 1],
+    failDrainUnit: ['防御失敗ドレイン（×連続数）', 1], failDrainCap: ['防御失敗ドレイン上限', 1], chargeMult: ['貯め後の攻撃倍率', 1],
+    noDefAfterCharge: ['貯めた次は防御不可（1＝不可）', 1], classic: ['先攻順で処理・クリティカル系なし（1＝初期版）', 1],
+    failCrit: ['防御失敗時に確定クリティカル（1＝あり）', 1]
+  };
+  let cfg = { ...DEF };
+  const NAMES = { A: '攻撃', C: '貯める', D: '防御' };
+  const CLS = { A: 'atk', C: 'chg', D: 'def' };
+  const $ = s => document.querySelector(s);
+  const pct = x => Math.round(x * 100) + '%';
+  let G = null;
+
+  function names() {
+    const m = $('#mode').value;
+    if (m === 'cpu') return ['あなた', 'CPU'];
+    if (m === 'hot') return ['プレイヤー1', 'プレイヤー2'];
+    return ['自分', '相手'];
+  }
+  function allowed(last) {
+    if (last === null || last === 'A') return ['A', 'C', 'D'];
+    if (last === 'C') return cfg.noDefAfterCharge ? ['A', 'C'] : ['A', 'C', 'D'];
+    return ['A', 'D'];
+  }
+  const succRate = ds => Math.max(0, 1 - cfg.defStep * Math.max(0, ds - (cfg.defGrace - 1)));
+  const critRate = (hp, i) => Math.min(cfg.critCap, cfg.critBase + Math.max(0, hp[1 - i] - hp[i]) * cfg.critK);
+
+  function newGame() {
+    G = {
+      hp: [cfg.hp, cfg.hp], last: [null, null], ch: [false, false], ds: [0, 0],
+      round: 1, over: false, result: null, hist: [[], []], log: [], pick: [null, null],
+      phase: 'p1', mode: $('#mode').value, diff: $('#diff').value, names: names(),
+      first: cfg.classic ? Math.floor(Math.random() * 2) : null
+    };
+    render();
+  }
+
+  // 初期版の処理：両者が同時に選び、効果は先攻→後攻の順に適用（HP上限で頭打ちになる時だけ差が出る）。死亡判定は処理後。
+  function resolveClassic(S, cmd, rnd, n) {
+    const L = [], hp = S.hp.slice(), loaded = [false, false];
+    const f = S.first == null ? 0 : S.first;
+    for (const i of [f, 1 - f]) {
+      const j = 1 - i;
+      if (cmd[i] === 'A') {
+        hp[i] -= cfg.attackCost;
+        const mult = S.ch[i] ? cfg.chargeMult : 1, dmg = cfg.damage * mult;
+        if (cmd[j] !== 'D') {
+          hp[j] -= dmg;
+          if (n) L.push(`${n[i]}の攻撃が${n[j]}に${dmg}ダメージ${mult > 1 ? '（貯め後の倍率）' : ''}。${n[i]}はコスト−${cfg.attackCost}`);
+        } else if (n) L.push(`${n[j]}の防御で${n[i]}の攻撃は無効。${n[i]}はコスト−${cfg.attackCost}`);
+      } else if (cmd[i] === 'C') {
+        const before = hp[i];
+        hp[i] = Math.min(cfg.hp, hp[i] + cfg.heal);
+        if (hp[i] > before) loaded[i] = true;
+        if (n) L.push(`${n[i]}は貯めて+${hp[i] - before}${hp[i] > before ? '（次の攻撃が' + cfg.chargeMult + '倍）' : '（HP上限で回復なし・倍率は付かない）'}`);
+      } else if (n && cmd[j] !== 'A') {
+        L.push(`${n[i]}は防御（何も起きず）`);
+      }
+    }
+    const ch = [0, 1].map(i => cmd[i] === 'C' ? loaded[i] : false);
+    const ds = [0, 1].map(i => cmd[i] === 'D' ? S.ds[i] + 1 : 0);
+    return { hp, ch, ds, last: cmd.slice(), lines: L, delta: [hp[0] - S.hp[0], hp[1] - S.hp[1]] };
+  }
+
+  // 1ラウンドの処理（同時処理）。rnd は 0以上1未満の乱数関数。
+  function resolve(S, cmd, rnd, n) {
+    if (cfg.classic) return resolveClassic(S, cmd, rnd, n);
+    const L = [], delta = [0, 0], loaded = [false, false], failed = [false, false];
+    for (let i = 0; i < 2; i++) {
+      const j = 1 - i;
+      if (cmd[i] === 'A') {
+        delta[i] -= cfg.attackCost;
+        const mult = S.ch[i] ? cfg.chargeMult : 1;
+        const dmg = cfg.damage * mult;
+        let forceCrit = false, failDrain = 0;
+        if (cmd[j] !== 'D') {
+          delta[j] -= dmg;
+          if (n) L.push(`${n[i]}の攻撃が${n[j]}に${dmg}ダメージ${mult > 1 ? '（貯め後の倍率）' : ''}。${n[i]}はコスト−${cfg.attackCost}`);
+        } else {
+          const sr = succRate(S.ds[j]);
+          if (rnd() < sr) {
+            if (n) L.push(`${n[j]}の防御が成功（成功率${pct(sr)}）。ダメージ0。${n[i]}はコスト−${cfg.attackCost}`);
+          } else {
+            delta[j] -= dmg; failed[j] = true;
+            if (cfg.failCrit) {
+              forceCrit = true;
+              failDrain = Math.min(cfg.failDrainCap, cfg.failDrainUnit * (S.ds[j] + 1));
+              if (n) L.push(`${n[j]}の防御が失敗（成功率${pct(sr)}）。${dmg}ダメージ、攻撃は確定クリティカル`);
+            } else if (n) L.push(`${n[j]}の防御が失敗（成功率${pct(sr)}）。防げず通常どおり${dmg}ダメージ。${n[i]}はコスト−${cfg.attackCost}`);
+          }
+        }
+        const rate = critRate(S.hp, i);
+        const rolled = rnd() < rate;
+        if (forceCrit || rolled) {
+          const dr = failDrain || cfg.drain * (cmd[j] === 'C' ? 2 : 1);
+          delta[j] -= dr; delta[i] += dr;
+          if (n) L.push(`クリティカル${forceCrit ? '（防御失敗）' : `（発動率${pct(rate)}）`}：${n[i]}が${n[j]}から${dr}ドレイン${cmd[j] === 'C' && !forceCrit ? '（貯め中なので2倍）' : ''}`);
+        } else if (n && (cfg.critBase > 0 || cfg.critK > 0)) {
+          L.push(`クリティカルは不発（発動率${pct(rate)}）`);
+        }
+      } else if (cmd[i] === 'C') {
+        delta[i] += cfg.heal;
+        if (S.hp[i] < cfg.hp) loaded[i] = true;
+        if (n) L.push(`${n[i]}は貯めて+${cfg.heal}${S.hp[i] >= cfg.hp ? '（HP上限で回復なし・倍率は付かない）' : '（次の攻撃が' + cfg.chargeMult + '倍）'}`);
+      } else if (n && cmd[j] !== 'A') {
+        L.push(`${n[i]}は防御（何も起きず）`);
+      }
+    }
+    if (cmd[0] === cmd[1]) {
+      delta[0] -= cfg.mirror; delta[1] -= cfg.mirror;
+      if (n) L.push(`同じ手のペナルティ：両者−${cfg.mirror}`);
+    }
+    const hp = [0, 1].map(i => Math.min(cfg.hp, S.hp[i] + delta[i]));
+    const ch = [0, 1].map(i => cmd[i] === 'C' ? loaded[i] : false);
+    const ds = [0, 1].map(i => cmd[i] === 'D' ? (failed[i] ? 0 : S.ds[i] + 1) : 0);
+    return { hp, ch, ds, last: cmd.slice(), lines: L, delta };
+  }
+
+  function weighted(w, allowedList) {
+    const ent = allowedList.map(c => [c, Math.max(0.0001, w[c] || 0.0001)]);
+    const tot = ent.reduce((a, [, x]) => a + x, 0);
+    let x = Math.random() * tot;
+    for (const [c, v] of ent) { x -= v; if (x <= 0) return c; }
+    return ent[ent.length - 1][0];
+  }
+
+  // 相手の次の手の予測。全体の頻度と「直前の手が同じだった時の次の手」を、観測数に応じて混ぜる
+  function oppModel(S, j) {
+    const h = S.hist[j], last = S.last[j];
+    const glob = { A: 1, C: 1, D: 1 }, cond = { A: 0.3, C: 0.3, D: 0.3 };
+    let n = 0;
+    h.forEach((c, k) => {
+      glob[c] += k >= h.length - 6 ? 2 : 1;
+      if (k > 0 && h[k - 1] === last) { cond[c] += 1.5; n++; }
+    });
+    const oppOk = allowed(last);
+    const gT = oppOk.reduce((a, c) => a + glob[c], 0), cT = oppOk.reduce((a, c) => a + cond[c], 0);
+    const wc = Math.min(0.8, n / (n + 2));
+    const p = {};
+    oppOk.forEach(c => { p[c] = (1 - wc) * glob[c] / gT + wc * cond[c] / cT; });
+    return { oppOk, p, n };
+  }
+
+  // CPUの手。相手の現在の手は見ない（履歴と盤面のみ）
+  function cpuChoose(S, i) {
+    const j = 1 - i, ok = allowed(S.last[i]);
+    if (S.diff === 'easy') return ok[Math.floor(Math.random() * ok.length)];
+    const { oppOk, p, n } = oppModel(S, j);
+    if (S.diff === 'normal') {
+      // 相手の癖が見えてきたら、予測される手に対応する手を返すことが多い
+      if (n >= 2 && Math.random() < 0.6) {
+        const pred = oppOk.reduce((b, c) => p[c] > p[b] ? c : b, oppOk[0]);
+        let counter;
+        if (pred === 'A') counter = (ok.includes('D') && succRate(S.ds[i]) >= 0.5) ? 'D' : 'A';
+        else if (pred === 'C') counter = 'A';
+        else counter = (ok.includes('C') && S.hp[i] < cfg.hp) ? 'C' : 'A';
+        if (ok.includes(counter)) return counter;
+      }
+      const low = S.hp[i] <= cfg.hp * 0.25, lead = S.hp[i] >= S.hp[j] + cfg.hp * 0.1;
+      let w;
+      if (low) w = { D: 6, C: 3, A: 1 };
+      else if (S.ch[i]) w = { A: 7, D: 2, C: 1 };
+      else if (lead) w = { D: 5, A: 3, C: 2 };
+      else w = { A: 4, C: 4, D: 2 };
+      w.D *= Math.max(0.05, succRate(S.ds[i]));
+      if (S.hp[i] >= cfg.hp) w.C *= 0.1;
+      return weighted(w, ok);
+    }
+    // つよい：予測した相手の手の分布に対して、期待値が最大の手を選ぶ（少し乱す）
+    if (Math.random() < 0.08) return ok[Math.floor(Math.random() * ok.length)];
+    let best = ok[0], bestV = -1e9;
+    for (const c of ok) {
+      let v = 0;
+      oppOk.forEach(o => {
+        let s = 0;
+        const N = 80;
+        for (let t = 0; t < N; t++) {
+          const cm = i === 0 ? [c, o] : [o, c];
+          const r = resolve(S, cm, Math.random, null);
+          let sc = r.hp[i] - r.hp[j];
+          if (r.hp[i] <= 0 && r.hp[j] <= 0) sc -= 15;
+          else if (r.hp[i] <= 0) sc -= 120;
+          else if (r.hp[j] <= 0) sc += 120;
+          if (r.ch[i]) sc += 4;
+          s += sc;
+        }
+        v += (s / N) * p[o];
+      });
+      if (v > bestV) { bestV = v; best = c; }
+    }
+    return best;
+  }
+  function play(cmd) {
+    const S = G;
+    const before = S.hp.slice();
+    const r = resolve(S, cmd, Math.random, S.names);
+    S.hp = r.hp; S.ch = r.ch; S.ds = r.ds; S.last = r.last;
+    S.hist[0].push(cmd[0]); S.hist[1].push(cmd[1]);
+    const entry = { round: S.round, cmd: cmd.slice(), lines: r.lines, before, after: r.hp.slice() };
+    S.log.unshift(entry);
+    S.round += 1;
+    S.pick = [null, null]; S.phase = 'p1';
+    const d0 = S.hp[0] <= 0, d1 = S.hp[1] <= 0;
+    if (d0 || d1) { S.over = true; S.result = d0 && d1 ? 'draw' : (d0 ? 1 : 0); }
+    render();
+  }
+
+  function cmdInfo(c, i) {
+    const S = G;
+    if (c === 'A') {
+      const m = S.ch[i] ? cfg.chargeMult : 1;
+      const crit = (cfg.critBase > 0 || cfg.critK > 0) ? `／クリ${pct(critRate(S.hp, i))}` : '';
+      return `コスト−${cfg.attackCost}／ダメージ${cfg.damage * m}${m > 1 ? '（貯め後）' : ''}${crit}`;
+    }
+    if (c === 'C') return `+${cfg.heal}回復／次の攻撃${cfg.chargeMult}倍${S.hp[i] >= cfg.hp ? '（HP上限なので倍率なし）' : ''}`;
+    if (!(cfg.defStep > 0)) return 'コストなし／攻撃を完全に防ぐ';
+    if (!cfg.failCrit) return `コストなし／成功率${pct(succRate(S.ds[i]))}（連続で低下）／失敗は通常ダメージ`;
+    return `コストなし／成功率${pct(succRate(S.ds[i]))}／失敗で確定クリ（ドレイン${Math.min(cfg.failDrainCap, cfg.failDrainUnit * (S.ds[i] + 1))}）`;
+  }
+  function cmdButtons(i, onPick, selected) {
+    const S = G, ok = allowed(S.last[i]);
+    const wrap = document.createElement('div'); wrap.className = 'cmds';
+    ['A', 'C', 'D'].forEach(c => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `cmd ${CLS[c]}${selected === c ? ' sel' : ''}`;
+      const allow = ok.includes(c) && !S.over;
+      b.disabled = !allow;
+      const reason = !ok.includes(c) ? (c === 'D' ? '貯めた次は防御できない' : '防御した次は貯められない') : '';
+      b.innerHTML = `<span class="name">${NAMES[c]}</span><span class="info">${reason || cmdInfo(c, i)}</span>`;
+      b.addEventListener('click', () => onPick(c));
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+
+  function fighterCard(i) {
+    const S = G, n = S.names[i];
+    const p = Math.max(0, S.hp[i]) / cfg.hp * 100;
+    const chips = [];
+    chips.push(`<span class="chip ${S.last[i] ? CLS[S.last[i]] : ''}">前の手：${S.last[i] ? NAMES[S.last[i]] : 'なし'}</span>`);
+    if (S.ch[i]) chips.push(`<span class="chip warn">次の攻撃${cfg.chargeMult}倍</span>`);
+    if (cfg.defStep > 0) chips.push(`<span class="chip">防御連続${S.ds[i]}回（次の成功率${pct(succRate(S.ds[i]))}）</span>`);
+    if (cfg.critBase > 0 || cfg.critK > 0) chips.push(`<span class="chip">クリ率${pct(critRate(S.hp, i))}</span>`);
+    if (S.first === i) chips.push(`<span class="chip warn">先攻</span>`);
+    return `<div class="fighter"><h2>${n}</h2><div class="hp">${Math.max(0, S.hp[i])}<small> / ${cfg.hp}</small></div>
+      <div class="track"><div class="fill${p <= 25 ? ' low' : ''}" style="width:${p}%"></div></div>
+      <div class="chips">${chips.join('')}</div></div>`;
+  }
+
+  function render() {
+    const S = G;
+    $('#arena').innerHTML = fighterCard(0) + fighterCard(1);
+    $('#turn').textContent = S.over ? '対戦終了' : `第${S.round}ラウンド${S.first != null ? `（先攻：${S.names[S.first]}）` : ''}`;
+    // banner
+    const ban = $('#banner');
+    if (S.over) {
+      const t = S.result === 'draw' ? ['引き分け（同時にHP0）', 'draw'] : [`${S.names[S.result]}の勝ち`, (S.mode === 'cpu' ? (S.result === 0 ? 'win' : 'lose') : 'win')];
+      ban.innerHTML = `<div class="banner ${t[1]}">${t[0]}</div>`;
+    } else ban.innerHTML = '';
+    // controls
+    const c = $('#controls'); c.innerHTML = '';
+    if (S.over) {
+      c.innerHTML = '<div class="cover"><div>対戦が終わりました。</div></div>';
+      const b = document.createElement('button'); b.className = 'btn primary'; b.type = 'button'; b.textContent = 'もう一度';
+      b.addEventListener('click', newGame); c.firstChild.appendChild(b);
+    } else if (S.mode === 'cpu') {
+      const h = document.createElement('h3'); h.textContent = `${S.names[0]}の手を選ぶ（CPUも同時に選びます）`;
+      c.appendChild(h);
+      c.appendChild(cmdButtons(0, pick => { const o = cpuChoose(S, 1); play([pick, o]); }, null));
+    } else if (S.mode === 'hot') {
+      if (S.phase === 'p1') {
+        const h = document.createElement('h3'); h.textContent = `${S.names[0]}の手を選ぶ（${S.names[1]}は見ないでください）`; c.appendChild(h);
+        c.appendChild(cmdButtons(0, pick => { S.pick[0] = pick; S.phase = 'cover'; render(); }, null));
+      } else if (S.phase === 'cover') {
+        c.innerHTML = `<div class="cover"><div>${S.names[0]}の手は伏せました。${S.names[1]}に端末を渡してください。</div></div>`;
+        const b = document.createElement('button'); b.className = 'btn primary'; b.type = 'button'; b.textContent = `${S.names[1]}の番に進む`;
+        b.addEventListener('click', () => { S.phase = 'p2'; render(); }); c.firstChild.appendChild(b);
+      } else {
+        const h = document.createElement('h3'); h.textContent = `${S.names[1]}の手を選ぶ`; c.appendChild(h);
+        c.appendChild(cmdButtons(1, pick => { play([S.pick[0], pick]); }, null));
+      }
+    } else {
+      const g = document.createElement('div'); g.className = 'groups two';
+      [0, 1].forEach(i => {
+        const box = document.createElement('div');
+        const h = document.createElement('h3'); h.textContent = `${S.names[i]}の手`; box.appendChild(h);
+        box.appendChild(cmdButtons(i, pick => { S.pick[i] = pick; render(); }, S.pick[i]));
+        g.appendChild(box);
+      });
+      c.appendChild(g);
+      const go = document.createElement('button'); go.className = 'btn primary'; go.type = 'button'; go.textContent = '処理する';
+      go.disabled = !(S.pick[0] && S.pick[1]);
+      go.addEventListener('click', () => play(S.pick.slice()));
+      c.appendChild(go);
+    }
+    // result
+    const res = $('#result');
+    if (!S.log.length) {
+      res.innerHTML = `<h3>直近の結果</h3><p class="note" style="margin:0">まだ始まっていません。上の手を選ぶと、ここに処理の内訳が出ます。</p>`;
+    } else {
+      const e = S.log[0];
+      res.innerHTML = `<h3>第${e.round}ラウンドの結果</h3>
+        <div class="round-head"><span class="chip ${CLS[e.cmd[0]]}">${S.names[0]}：${NAMES[e.cmd[0]]}</span><span class="vs">対</span><span class="chip ${CLS[e.cmd[1]]}">${S.names[1]}：${NAMES[e.cmd[1]]}</span></div>
+        <ul class="lines">${e.lines.map(l => `<li>${l}</li>`).join('')}</ul>
+        <div class="hpline">${S.names[0]} ${e.before[0]} → ${Math.max(0, e.after[0])}　／　${S.names[1]} ${e.before[1]} → ${Math.max(0, e.after[1])}</div>`;
+    }
+    // log
+    $('#log').innerHTML = S.log.slice(1).map(e =>
+      `<div class="logitem"><b>第${e.round}回</b> ${S.names[0]}：${NAMES[e.cmd[0]]} ／ ${S.names[1]}：${NAMES[e.cmd[1]]}　<span class="hpline">${e.before[0]}→${Math.max(0, e.after[0])} ・ ${e.before[1]}→${Math.max(0, e.after[1])}</span></div>`
+    ).join('') || '<p class="note" style="margin:0">履歴はまだありません。</p>';
+  }
+
+  // settings
+  function buildSettings() {
+    const box = $('#settings'); box.innerHTML = '';
+    Object.keys(DEF).forEach(k => {
+      const [label, step] = LABELS[k];
+      const lab = document.createElement('label'); lab.htmlFor = 'cfg-' + k; lab.textContent = label;
+      const inp = document.createElement('input'); inp.id = 'cfg-' + k; inp.type = 'number'; inp.step = step; inp.value = cfg[k];
+      inp.addEventListener('change', () => { const v = parseFloat(inp.value); if (!isNaN(v)) cfg[k] = v; });
+      lab.appendChild(inp); box.appendChild(lab);
+    });
+  }
+  $('#resetcfg').addEventListener('click', () => { cfg = { ...DEF }; $('#preset').value = 'base'; buildSettings(); newGame(); });
+  $('#preset').addEventListener('change', () => { cfg = { ...DEF, ...PRESETS[$('#preset').value].patch }; buildSettings(); newGame(); });
+  $('#newgame').addEventListener('click', newGame);
+  $('#mode').addEventListener('change', newGame);
+  $('#diff').addEventListener('change', () => { if (G) G.diff = $('#diff').value; });
+  buildSettings();
+  newGame();
+})();
+</script>
+
+
+</body>
+</html>
+
+
