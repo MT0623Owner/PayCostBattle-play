@@ -360,7 +360,6 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
 <script src="engine.js"></script>
 <script src="firebase-config.js"></script>
-
 <script>
 (() => {
   'use strict';
@@ -1189,7 +1188,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     if (go.disabled) return;
     // BGMの読み込み・展開を少し待ってから始める（最大6秒。間に合わなければ、そのまま始めて、読み込み後に鳴らす）
     if (!lite && !bgmData) {
-      go.disabled = true; go.textContent = 'BGMを読み込み中…';
+      go.disabled = true; go.textContent = 'ロード中…';
       for (let i = 0; i < 60 && !bgmData && !lite; i++) await new Promise((r) => setTimeout(r, 100));
       go.disabled = false; go.textContent = 'タップして開始';
     }
