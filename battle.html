@@ -177,6 +177,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 .pname { font-weight: 800; font-size: 1.05rem; }
 .nameedit { display: flex; gap: 6px; flex-wrap: wrap; }
 .nameedit input { flex: 1; min-width: 8em; }
+.rulebox { display: grid; gap: 8px; padding: 8px 10px; border: 1px dashed var(--win-line); border-radius: 10px; }
+/* display を指定した要素でも、hidden 属性で確実に隠れるようにする */
+[hidden] { display: none !important; }
 @media (max-width: 560px) { .entrycards { grid-template-columns: 1fr; } .invite { grid-template-columns: 1fr; justify-items: start; } }
 </style>
 </head>
@@ -247,6 +250,15 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           </div>
         </div>
         <div class="players" id="lobbyPlayers"></div>
+        <div class="rulebox">
+          <div>ルール：<b id="ruleSummary"></b></div>
+          <div class="row" id="hostRules" hidden>
+            <label for="lobbyHp">初期HP</label>
+            <select id="lobbyHp"><option value="50">50</option><option value="100">100</option><option value="150">150</option><option value="200">200</option></select>
+            <label for="lobbyCrit">クリティカル</label>
+            <select id="lobbyCrit"><option value="on">あり</option><option value="off">なし</option></select>
+          </div>
+        </div>
         <div class="row"><button class="btn primary" id="btnOnlineStart" type="button" disabled>バトル開始</button></div>
       </div>
       <div class="note" id="onlineMsg"></div>
@@ -258,6 +270,20 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         <option value="Grassland">草原</option>
         <option value="Desert">砂漠</option>
         <option value="Wood1">森</option>
+      </select>
+    </div>
+    <div class="row" id="ruleRow">
+      <label for="hpsel">初期HP</label>
+      <select id="hpsel">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="150">150</option>
+        <option value="200">200</option>
+      </select>
+      <label for="critsel">クリティカル</label>
+      <select id="critsel">
+        <option value="on" selected>あり</option>
+        <option value="off">なし</option>
       </select>
     </div>
     <div class="row">
@@ -373,6 +399,16 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- 状態 ----------
   const cfg = PCB.makeConfig();
+  // ルール設定（初期HP・クリティカルの有無）。選択画面の設定を cfg に反映する。
+  // クリティカルなし＝発動率を0にする（基本率・HP差補正・上限をすべて0）。
+  function applyRules() {
+    cfg.hp = parseInt($('#hpsel').value, 10) || PCB.DEFAULTS.hp;
+    const critOn = $('#critsel').value !== 'off';
+    cfg.critBase = critOn ? PCB.DEFAULTS.critBase : 0;
+    cfg.critK = critOn ? PCB.DEFAULTS.critK : 0;
+    cfg.critCap = critOn ? PCB.DEFAULTS.critCap : 0;
+  }
+  const rulesText = (c) => `初期HP ${c.hp}／クリティカル${(c.critBase > 0 || c.critK > 0) ? 'あり' : 'なし'}`;
   let mode = 'cpu', diff = 'normal';
   let chars = [1, 2];                 // [右側（あなた/P1）, 左側（相手/P2）] のアクター番号
   let state = null, busy = false, pick = [null, null], phase = 'p1';
@@ -957,6 +993,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // ---------- 開始・再開 ----------
   function startBattle() {
     refreshSelect();
+    applyRules();
     state = PCB.newState(cfg);
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');
@@ -1130,6 +1167,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const api = await fbInit();
       const name = ($('#onName').value || 'プレイヤー').trim().slice(0, 12);
       ONLINE.name = name; ONLINE.myChar = chars[0];
+      applyRules();                                  // 部屋のルール＝作った人が選んだ設定（ロビーでも変えられる）
       let code = '', tries = 0;
       while (tries++ < 8) { code = newCode(); if (!(await api.get(code))) break; }
       const room = { code, v: 1, createdAt: Date.now(), phase: 'lobby',
@@ -1190,6 +1228,14 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   function renderLobby(room) {
     const me = ONLINE.seat === 0 ? room.host : room.guest, op = ONLINE.seat === 0 ? room.guest : room.host;
     renderPlayers(me, op, room);
+    // ルールの表示（ホストだけ、ロビーの間は変えられる）
+    $('#ruleSummary').textContent = rulesText(room.cfg);
+    const isHost = ONLINE.seat === 0 && room.phase === 'lobby';
+    $('#hostRules').hidden = !isHost;
+    if (isHost) {
+      if (document.activeElement !== $('#lobbyHp')) $('#lobbyHp').value = String(room.cfg.hp);
+      if (document.activeElement !== $('#lobbyCrit')) $('#lobbyCrit').value = (room.cfg.critBase > 0 || room.cfg.critK > 0) ? 'on' : 'off';
+    }
     const canStart = ONLINE.seat === 0 && !!room.guest && room.phase === 'lobby';
     $('#btnOnlineStart').disabled = !canStart;
     $('#btnOnlineStart').textContent = ONLINE.seat === 0 ? 'バトル開始' : 'ホストが開始するのを待っています';
@@ -1390,6 +1436,22 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     }).catch(() => {});
   }
 
+  // ホストがロビーでルールを変えたら、部屋に反映する（相手の画面にも出る）
+  async function onlineSetRules() {
+    const hp = parseInt($('#lobbyHp').value, 10), critOn = $('#lobbyCrit').value !== 'off';
+    try {
+      await ONLINE.api.mutate(ONLINE.code, (rm) => {
+        if (rm.phase !== 'lobby' || rm.host.uid !== ONLINE.api.uid) return null;
+        rm.cfg.hp = hp;
+        rm.cfg.critBase = critOn ? PCB.DEFAULTS.critBase : 0;
+        rm.cfg.critK = critOn ? PCB.DEFAULTS.critK : 0;
+        rm.cfg.critCap = critOn ? PCB.DEFAULTS.critCap : 0;
+        return rm;
+      });
+    } catch (e) { onMsg('ルールを変更できませんでした：' + e.message); }
+  }
+  $('#lobbyHp').addEventListener('change', onlineSetRules);
+  $('#lobbyCrit').addEventListener('change', onlineSetRules);
   $('#btnLeave').addEventListener('click', onlineBackToEntry);
   if (navigator.share) {
     $('#btnShare').hidden = false;
