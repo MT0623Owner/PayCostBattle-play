@@ -387,9 +387,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   } catch (e) { /* 無視 */ }
   window.PCB_ASSETS = window.PCB_ASSETS || {};
   const AS = (key) => window.PCB_ASSETS[key] || (SRC + key);
-  const NCHAR = 16;                                              // キャラ数（1〜8＝通常、9〜16＝SF版）
-  const IMG = (n) => n > 8 ? `img/character/SF_Actor1_${n - 8}.png` : `img/character/Actor1_${n}.png`;            // SVアクターのシート（9列×6行、64px）
-  const FACE = (n) => n > 8 ? 'img/face/SF_Actor1.png' : 'img/face/Actor1.png';                            // 顔グラ（4列×2行、144px）
+  const NCHAR = 6;                                               // 選べるキャラ数（6体）。同じキャラを選ぶと、P2側はSF版（番号+6）になる
+  const NACTOR = 12;                                             // SF版を含むアクター数（1〜6＝通常、7〜12＝SF版）
+  const IMG = (n) => n > 6 ? `img/character/SF_Actor1_${n - 6}.png` : `img/character/Actor1_${n}.png`;            // SVアクターのシート（9列×6行、64px）
+  const FACE = (n) => n > 6 ? 'img/face/SF_Actor1.png' : 'img/face/Actor1.png';                            // 顔グラ（4列×2行、144px）
   const WEAPON = 'img/Weapon/Weapons1.png';                      // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
   const WEAPON_ID = 2;                                           // 1=短剣、2=剣、3=フレイル、4=斧、5=ムチ、6=杖 ／ 7=弓…（MZのweaponImageId）
   const BATTLEBACKS = ['Grassland', 'Desert', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
@@ -553,13 +554,16 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- 選択画面 ----------
   let cpuPick = 0;                      // CPU戦のCPUのキャラ。0＝ランダム（バトルごとに変わる）
-  const randomOther = (n) => { let r; do { r = 1 + Math.floor(Math.random() * NCHAR); } while (r === n); return r; };
+  const randomOther = (n) => { let r; do { r = 1 + Math.floor(Math.random() * NACTOR); } while (r === n); return r; };   // SF版を含む12体から（CPU用）
+  // 同じキャラを選んだら、P2側（オンラインではゲスト側）がSF版になる
+  const actorOf = (i) => {
+    if (chars[0] !== chars[1] || chars[0] > NCHAR) return chars[i];
+    const sf = mode === 'online' ? (ONLINE.seat === 1 ? 0 : 1) : 1;
+    return i === sf ? chars[i] + NCHAR : chars[i];
+  };
   // そのキャラ(n)を、プレイヤー(idx)が選べないか（同じキャラは選べない）
   function isTaken(idx, n) {
-    if (mode === 'hot') return chars[1 - idx] === n;
-    if (mode === 'cpu') return idx === 1 && chars[0] === n;
-    if (mode === 'online') return idx === 0 && ONLINE.oppChar === n;
-    return false;
+    return false;   // 同じキャラも選べる（P2側がSF版になる）
   }
   function buildFaces(el, idx) {
     el.innerHTML = '';
@@ -576,7 +580,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const taken = isTaken(idx, n);
       const selected = cpuSide ? cpuPick === n : chars[idx] === n;
       b.type = 'button'; b.className = 'face' + (selected ? ' sel' : '') + (taken ? ' taken' : '');
-      const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
+      const m = (n - 1) % 6, col = m % 4, row = Math.floor(m / 4);
       b.style.backgroundImage = `url(${AS(FACE(n))})`;
       b.style.backgroundSize = '400% 200%';
       b.style.backgroundPosition = `${col * 100 / 3}% ${row * 100}%`;
@@ -598,11 +602,11 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     $('#diffField').hidden = !cpu;
     $('#p1Title').textContent = (cpu || online) ? 'あなたのキャラ' : 'プレイヤー1（左側）のキャラ';
     $('#p2Title').textContent = cpu ? 'CPUのキャラ（ランダムなら毎回変わる）' : 'プレイヤー2（右側）のキャラ';
-    $('#faces2').parentElement.style.display = online ? 'none' : '';
+    $('#faces2').parentElement.style.display = (online || cpu) ? 'none' : '';   // CPUのキャラはランダム固定
     $('#onlinePanel').hidden = !online;
     $('#startRow').style.display = online ? 'none' : '';
     $('#bgRow').style.display = online ? 'none' : '';
-    if (mode === 'hot' && chars[0] === chars[1]) chars[1] = randomOther(chars[0]);   // 同じキャラは選べない
+    if (chars[1] > NCHAR) chars[1] = ((chars[1] - 1) % NCHAR) + 1;   // CPU戦で入ったSF版の番号を、選択用に戻す
     buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
   }
   $('#mode').addEventListener('change', refreshSelect);
@@ -1162,11 +1166,11 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     refreshSelect();
     applyRules();
     // CPU戦：CPUのキャラは、ランダム指定ならバトルごとに変える（自分と同じキャラにはならない）
-    if (mode === 'cpu') chars[1] = (cpuPick && cpuPick !== chars[0]) ? cpuPick : randomOther(chars[0]);
+    if (mode === 'cpu') chars[1] = randomOther(chars[0]);   // SF版を含む12体からランダム（自分と同じ番号にはしない）
     state = PCB.newState(cfg);
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');
-    B[0].setActor(chars[0]); B[1].setActor(chars[1]);
+    B[0].setActor(actorOf(0)); B[1].setActor(actorOf(1));
     B.forEach((b) => b.move(0));
     pickBg();
     preloadBgm();
@@ -1180,7 +1184,15 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     startBattle();
     $('#startOverlay').style.display = 'grid';
   });
-  $('#btnGo').addEventListener('click', () => {
+  $('#btnGo').addEventListener('click', async () => {
+    const go = $('#btnGo');
+    if (go.disabled) return;
+    // BGMの読み込み・展開を少し待ってから始める（最大6秒。間に合わなければ、そのまま始めて、読み込み後に鳴らす）
+    if (!lite && !bgmData) {
+      go.disabled = true; go.textContent = 'BGMを読み込み中…';
+      for (let i = 0; i < 60 && !bgmData && !lite; i++) await new Promise((r) => setTimeout(r, 100));
+      go.disabled = false; go.textContent = 'タップして開始';
+    }
     $('#startOverlay').style.display = 'none';
     startBGM();
     say('バトル開始！');
@@ -1398,9 +1410,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         if (room.host.uid === api.uid) return null;                                   // 自分の部屋（再入室）
         if (room.guest && room.guest.uid === api.uid) return null;                    // 再入室
         if (room.guest) throw new Error('この部屋は満員です');
-        // 同じキャラは選べない：ホストと同じなら、空いている最初のキャラにする
-        joinedChar = ONLINE.myChar;
-        if (room.host.char === joinedChar) { for (let n = 1; n <= NCHAR; n++) if (n !== room.host.char) { joinedChar = n; break; } }
+        joinedChar = ONLINE.myChar;   // ホストと同じキャラなら、ゲスト側がSF版になる
         room.guest = { uid: api.uid, name, char: joinedChar };
         return room;
       });
@@ -1443,7 +1453,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     renderPlayers(me, op, room);
     // 相手が選んでいるキャラは、自分の選択欄で選べなくする（同じキャラは選べない）
     const oc = op ? op.char : 0;
-    if (oc !== ONLINE.oppChar) { ONLINE.oppChar = oc; buildFaces($('#faces1'), 0); }
+    ONLINE.oppChar = oc;
     // ルールの表示（ホストだけ、ロビーの間は変えられる）
     $('#ruleSummary').textContent = rulesText(room.cfg);
     const isHost = ONLINE.seat === 0 && room.phase === 'lobby';
@@ -1461,7 +1471,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // 顔グラ（素材が無い時は色だけ）
   function faceCss(n) {
-    const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
+    const m = (n - 1) % 6, col = m % 4, row = Math.floor(m / 4);
     return `background-image:url(${AS(FACE(n))});background-size:400% 200%;background-position:${col * 100 / 3}% ${row * 100}%;background-color:hsl(${n * 47 % 360} 55% 38%)`;
   }
   // ロビーの参加者表示。入力欄は作り直さない（名前を打っている最中に消えないように）
@@ -1536,7 +1546,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     ONLINE.nextShow = room.state.round;
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');
-    B[0].setActor(chars[0]); B[1].setActor(chars[1]);
+    B[0].setActor(actorOf(0)); B[1].setActor(actorOf(1));
     B.forEach((b) => b.move(0));
     setBg(room.bg || BATTLEBACKS[0]);
     preloadBgm();
@@ -1702,7 +1712,6 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       ONLINE.api.mutate(ONLINE.code, (rm) => {
         const p = seat === 0 ? rm.host : rm.guest, other = seat === 0 ? rm.guest : rm.host;
         if (!p) return null;
-        if (other && other.char === n) return null;       // 相手と同じキャラは選べない
         p.char = n;
         return rm;
       }).catch(() => {});
@@ -1721,7 +1730,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 素材パックの展開後に、すでに出ているキャラ・背景を本物に付け直す
   function refreshArt() {
     if (!state) return;
-    B.forEach((b, i) => b.setActor(chars[i]));
+    B.forEach((b, i) => b.setActor(actorOf(i)));
     if (curBg) setBg(curBg);
   }
   // BGMは大きいので、バトルを始めた時に裏で読み込む。読み込めた時点で、すでに開始済みなら鳴らし始める
@@ -1739,7 +1748,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         bgmData = data;
         if ($('#startOverlay').style.display === 'none') startBGM();   // すでに「タップして開始」を押していれば、すぐ鳴らす
       } catch (e) { /* 読み込み・展開に失敗したら、BGMなしで続ける */ }
-    }, 2500);
+    }, 600);
   }
   async function bootAssets() {
     const st = $('#loadStatus'), say = (t) => { if (st) st.textContent = t; };
