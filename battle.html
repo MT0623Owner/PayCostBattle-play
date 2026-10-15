@@ -109,7 +109,7 @@ select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--w
 /* 派手な演出（クリティカル・ガード・強打など） */
 .stage { transition: scale .12s ease-out; }
 .flashfx { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
-.bigtext { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%) rotate(-4deg); font-weight: 900; font-style: italic; font-size: 92px; letter-spacing: .06em; color: #fff; -webkit-text-stroke: 7px #14204f; paint-order: stroke fill; white-space: nowrap; pointer-events: none; text-shadow: 0 8px 0 rgba(0, 0, 0, .35), 0 0 34px currentColor; animation: bigin 1s cubic-bezier(.2, 1.5, .4, 1) forwards; z-index: 4; }
+.bigtext { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%) rotate(-4deg); font-weight: 900; font-style: italic; font-size: 92px; letter-spacing: .06em; color: #fff; -webkit-text-stroke: 7px #14204f; paint-order: stroke fill; white-space: nowrap; pointer-events: none; text-shadow: 0 8px 0 rgba(0, 0, 0, .35); animation: bigin 1s cubic-bezier(.2, 1.5, .4, 1) forwards; z-index: 4; }
 .bigtext.crit { color: #ffe45e; font-size: 118px; }
 .bigtext.guard { color: #9fd0ff; font-size: 80px; }
 .bigtext.charge { color: #ffa23a; font-size: 82px; }
@@ -189,6 +189,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     <h1>PayCostBattle（オンライン対戦）</h1>
     <div class="tools">
       <button class="btn" id="btnSpeed" type="button">演出：通常</button>
+      <button class="btn" id="btnLite" type="button" title="回線や端末が重い時用。エフェクトの読み込みやBGMを止めて、画面効果を減らします">軽量：OFF</button>
       <button class="btn" id="btnMute" type="button">音：ON</button>
       <button class="btn" id="btnMenu" type="button">メニューに戻る</button>
     </div>
@@ -289,6 +290,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     <div class="row">
       <button class="btn primary" id="btnStart" type="button">バトル開始</button>
       <span class="note">ルールは、戦闘画面の「あそびかた」で確認できます。</span>
+      <span class="note" id="loadStatus"></span>
     </div>
   </section>
 
@@ -306,7 +308,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         <div class="battler flip" id="bt0" style="left:150px; top:230px;">
           <div class="shadow"></div><div class="aura"></div><div class="body"><div class="sprite"></div><div class="weapon"></div></div><div class="tag" id="tag0"></div>
         </div>
-        <canvas id="fxgl" width="1632" height="960"></canvas>
+        <canvas id="fxgl" width="816" height="480"></canvas>
         <div class="fx" id="fx"></div>
 
         <div class="window status left" id="st0"></div>
@@ -338,7 +340,20 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 素材は「キー（src/ からの相対パス）」で持つ。AS(キー) が、素材パックから読み込んだ画像・音声のURLか、開発時の ./src/ のパスを返す。
   const SRC = './src/';                                         // 素材の置き場所（開発時）
   const PACK_CORE = 'assets/core.pack';                                          // 公開ページでは 'assets/core.pack'（ビルド時に差し替わる）
+  const PACK_FX = 'assets/fx.pack';                                            // 公開ページでは 'assets/fx.pack'（エフェクトの定義とテクスチャ。軽量モードでは読まない）
+  const PACK_BG = 'assets/bg-';                                            // 公開ページでは 'assets/bg-'（背景は 'assets/bg-<名前>.pack' を、使う分だけ読む）
+  const FX_JS = 'assets/effekseer.min.js';                                              // 公開ページでは 'assets/effekseer.min.js'（Effekseerのランタイム。MITライセンスの生ファイル）
+  const FX_WASM = 'assets/effekseer.wasm';                                            // 公開ページでは 'assets/effekseer.wasm'
   const PACK_BGM = 'assets/bgm.pack';                                           // 公開ページでは 'assets/bgm.pack'
+  // 軽量モード：エフェクトのランタイム・BGMを読み込まず、画面効果を減らす（回線や端末が弱い時用）。
+  // 初回は、通信が遅い／データセーバー／端末が非力そうなら自動でオン。ボタンでいつでも切り替えられる。
+  let lite = false;
+  try {
+    const saved = localStorage.getItem('pcb_lite');
+    const c = navigator.connection || {};
+    const weak = c.saveData || /(^|-)(2g|3g)$/.test(c.effectiveType || '') || (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+    lite = saved === null ? !!weak : saved === '1';
+  } catch (e) { /* 無視 */ }
   window.PCB_ASSETS = window.PCB_ASSETS || {};
   const AS = (key) => window.PCB_ASSETS[key] || (SRC + key);
   const IMG = (n) => `img/character/Actor1_${n}.png`;            // SVアクターのシート（9列×6行、64px）
@@ -357,23 +372,53 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 画面に出すだけで、元ファイルの形では置かない。パックは読み込み時にこの中で展開する。
   const PACK_KEY = new TextEncoder().encode('PayCostBattle-pack-v1');
   const MIME = { png: 'image/png', ogg: 'audio/ogg', js: 'text/javascript', wasm: 'application/wasm', efkefc: 'application/octet-stream' };
-  async function loadPack(url) {
-    if (!url) return false;
-    try {
-      const r = await fetch(url);
-      if (!r.ok) return false;
-      const u8 = new Uint8Array(await r.arrayBuffer());
-      for (let i = 0; i < u8.length; i++) u8[i] ^= PACK_KEY[i % PACK_KEY.length];
-      const hl = new DataView(u8.buffer).getUint32(0);
-      const idx = JSON.parse(new TextDecoder().decode(u8.subarray(4, 4 + hl)));
-      const base = 4 + hl;
-      Object.keys(idx).forEach((key) => {
-        const off = idx[key][0], len = idx[key][1];
-        const ext = key.split('.').pop();
-        window.PCB_ASSETS[key] = URL.createObjectURL(new Blob([u8.subarray(base + off, base + off + len)], { type: MIME[ext] || 'application/octet-stream' }));
-      });
-      return true;
-    } catch (e) { return false; }
+  // 4バイトずつXOR（キー21バイト×4＝84バイト＝21ワードの繰り返し）。1バイトずつ回すより速い
+  function xorPack(u8) {
+    const n = u8.length, words = n >> 2, L = PACK_KEY.length;
+    const k = new Uint32Array(L), kb = new Uint8Array(k.buffer);
+    for (let i = 0; i < L * 4; i++) kb[i] = PACK_KEY[i % L];
+    const w = new Uint32Array(u8.buffer, u8.byteOffset, words);
+    for (let i = 0, j = 0; i < words; i++) { w[i] ^= k[j]; if (++j === L) j = 0; }
+    for (let i = words << 2; i < n; i++) u8[i] ^= PACK_KEY[i % L];
+  }
+  const PACKS = {};                                  // url → Promise（同じパックを二重に読まない）
+  function loadPack(url, onProgress, low) {
+    if (!url) return Promise.resolve(false);
+    if (PACKS[url]) return PACKS[url];
+    PACKS[url] = (async () => {
+      try {
+        // low＝低優先度（BGMなど。対戦の通信やキャラ画像の読み込みを邪魔しない）
+        const r = await fetch(url, low ? { priority: 'low' } : undefined);
+        if (!r.ok) return false;
+        const total = parseInt(r.headers.get('content-length') || '0', 10);
+        let u8;
+        if (r.body && onProgress) {
+          // 進み具合を出すため、少しずつ受け取る（圧縮されている場合は、割合は目安）
+          const reader = r.body.getReader(), chunks = []; let got = 0;
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value); got += value.length;
+            if (total) onProgress(Math.min(0.99, got / total));
+          }
+          u8 = new Uint8Array(got);
+          let o = 0; chunks.forEach((c) => { u8.set(c, o); o += c.length; });
+        } else {
+          u8 = new Uint8Array(await r.arrayBuffer());
+        }
+        xorPack(u8);
+        const hl = new DataView(u8.buffer).getUint32(0);
+        const idx = JSON.parse(new TextDecoder().decode(u8.subarray(4, 4 + hl)));
+        const base = 4 + hl;
+        Object.keys(idx).forEach((key) => {
+          const off = idx[key][0], len = idx[key][1];
+          const ext = key.split('.').pop();
+          window.PCB_ASSETS[key] = URL.createObjectURL(new Blob([u8.subarray(base + off, base + off + len)], { type: MIME[ext] || 'application/octet-stream' }));
+        });
+        return true;
+      } catch (e) { return false; }
+    })();
+    return PACKS[url];
   }
 
   // SVアクターのモーション（MZの並びに合わせる。1モーション3コマ、1行に3モーション）
@@ -389,7 +434,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     try { const a = new Audio(AS(src)); a.volume = vol; a.play().catch(() => {}); } catch (e) { /* 無視 */ }
   }
   function startBGM() {
-    if (bgmOn) return;
+    if (bgmOn || lite) return;
     try {
       bgm = new Audio(AS(BGM)); bgm.loop = true; bgm.volume = 0.45; bgm.muted = muted;
       bgm.play().then(() => { bgmOn = true; }).catch(() => {});
@@ -409,7 +454,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     cfg.critCap = critOn ? PCB.DEFAULTS.critCap : 0;
   }
   const rulesText = (c) => `初期HP ${c.hp}／クリティカル${(c.critBase > 0 || c.critK > 0) ? 'あり' : 'なし'}`;
-  let mode = 'cpu', diff = 'normal';
+  let mode = 'cpu', diff = 'normal', curBg = '';
   let chars = [1, 2];                 // [右側（あなた/P1）, 左側（相手/P2）] のアクター番号
   let state = null, busy = false, pick = [null, null], phase = 'p1';
   let speed = 1;                       // 1=通常、0.5=はやい
@@ -459,7 +504,11 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   window.addEventListener('resize', fit);
 
   // 背景：./src/img/battleback/<名前>.png（1000×740）。無ければCSSの簡易背景
-  function setBg(name) {
+  async function setBg(name) {
+    curBg = name;
+    // 公開ページでは、背景は1枚ずつのパック。使う背景だけを読み込む
+    if (PACK_BG && !window.PCB_ASSETS[`img/battleback/${name}.png`]) await loadPack(`${PACK_BG}${name}.pack`);
+    if (curBg !== name) return;                  // 読み込み中に別の背景に変わっていたら、何もしない
     const url = AS(`img/battleback/${name}.png`);
     const im = new Image();
     im.onload = () => {
@@ -582,11 +631,11 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   function initFX() {
     if (typeof effekseer === 'undefined') { console.info('Effekseerのランタイムが無いので、CSSの簡易演出を使います'); return; }
     const canvas = $('#fxgl');
-    const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true });
+    const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: false });
     if (!gl) return;
     EFX.canvas = canvas; EFX.gl = gl;
     probeTextures().then(() => {
-      effekseer.initRuntime(AS('effect/effekseer.wasm'), () => {
+      effekseer.initRuntime(FX_WASM || AS('effect/effekseer.wasm'), () => {
         const ctx = effekseer.createContext();
         ctx.init(gl);
         // 既定のローダーは拡張子（.png/.jpg）で画像かどうかを見分けるため、代用テクスチャ（data URL）が画像として読まれない。
@@ -660,13 +709,14 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
   // 対象(idx)の位置でエフェクトを再生する。再生できたらtrue（できなければ呼び出し側がCSS演出にする）
   function playFX(kind, idx, opt) {
-    if (!EFX.ready || !EFX.effects[kind]) return false;
+    if (lite || !EFX.ready || !EFX.effects[kind]) return false;
     opt = opt || {};
     const c = B[idx].center();
     const h = EFX.ctx.play(EFX.effects[kind], c.x - 408 + (opt.dx || 0), 240 - c.y + (opt.dy || 0), 0);
     const sc = (FXSCALE[kind] || 1) * (opt.scale || 1);
     h.setScale(opt.mirror ? -sc : sc, sc, sc);
     EFX.handles.add(h);
+    setTimeout(() => { try { h.stop(); } catch (e) { /* 無視 */ } }, 2500);   // 念のため：終わらないエフェクトで描画が回り続けないように
     if (!EFX.raf) { EFX.last = performance.now(); EFX.raf = requestAnimationFrame(fxLoop); }
     return true;
   }
@@ -716,7 +766,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
   function drainFx(from, to) {
     const a = B[from].center(), b = B[to].center();
-    for (let k = 0; k < 9; k++) {
+    for (let k = 0; k < (lite ? 4 : 9); k++) {
       const el = document.createElement('div'); el.className = 'dot';
       const jx = (Math.random() - .5) * 70, jy = (Math.random() - .5) * 70;
       el.style.left = `${a.x + jx}px`; el.style.top = `${a.y + jy}px`;
@@ -736,6 +786,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     setTimeout(() => el.remove(), 1100 * (skip ? 0.3 : 1) + 100);
   }
   function screenFlash(color, ms) {
+    if (lite) return;
     const el = document.createElement('div');
     el.className = 'flashfx'; el.style.background = color;
     fx.appendChild(el);
@@ -743,6 +794,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     setTimeout(() => el.remove(), ms + 60);
   }
   function burst(idx) {
+    if (lite) return;
     const c = B[idx].center();
     const el = document.createElement('div');
     el.className = 'burst';
@@ -756,7 +808,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     setTimeout(() => el.remove(), 860);
   }
   function zoomPunch(ms = 260) {
-    if (reduce) return;
+    if (reduce || lite) return;
     stage.style.scale = '1.08';
     setTimeout(() => { stage.style.scale = '1'; }, ms * (skip ? 0.3 : 1));
   }
@@ -891,7 +943,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         await sleep(160);
         // クリティカルは見せ場：画面フラッシュ・集中線・大きな文字・ズーム・もう一度の揺れ・ドレインの光
         screenFlash('#fff3b0', 560); burst(ev.to); zoomPunch(); bigText('CRITICAL!', 'crit');
-        shake(); setTimeout(shake, 150 * speed);
+        shake(); if (!lite) setTimeout(shake, 150 * speed);
         playSE(SE.drain, 0.9); playSE(SE.blow, 0.9);
         drainFx(ev.to, ev.from); flash(ev.to);
         pop(ev.to, `−${ev.crit.amount}`, 'drain', 10, 20);
@@ -1000,6 +1052,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     B[0].setActor(chars[0]); B[1].setActor(chars[1]);
     B.forEach((b) => b.move(0));
     pickBg();
+    preloadBgm();
     renderStatus(); renderCommands(); say('');
     $('#select').style.display = 'none';
     const bt = $('#battle'); bt.hidden = false; bt.style.display = 'grid';
@@ -1026,6 +1079,21 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     $('#battle').hidden = true; $('#battle').style.display = 'none';
     $('#select').style.display = 'grid';
   });
+  // 軽量モードの切り替え（次に開いた時も保持する）
+  function showLite() {
+    $('#btnLite').textContent = lite ? '軽量：ON' : '軽量：OFF';
+    document.body.classList.toggle('lite', lite);
+  }
+  $('#btnLite').addEventListener('click', () => {
+    lite = !lite;
+    try { localStorage.setItem('pcb_lite', lite ? '1' : '0'); } catch (e) { /* 無視 */ }
+    showLite();
+    if (lite) stopBGM();
+    else { preloadBgm(); }
+    const msgBox = $('#onlineMsg');
+    if (msgBox && mode === 'online') msgBox.textContent = lite ? '軽量モード：エフェクトとBGMを止めました' : '軽量モードを解除しました（エフェクトは、ページを開き直すと使えます）';
+  });
+  showLite();
   $('#btnMute').addEventListener('click', () => {
     muted = !muted; $('#btnMute').textContent = muted ? '音：OFF' : '音：ON';
     if (bgm) bgm.muted = muted;
@@ -1088,7 +1156,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     if (!conf || !conf.apiKey) throw new Error('オンライン対戦の接続設定がありません（firebase-config.js）');
     const [appM, authM, fsM] = await Promise.all([import(FB + 'firebase-app.js'), import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')]);
     const app = appM.initializeApp(conf, 'pcb');
-    const auth = authM.getAuth(app), db = fsM.getFirestore(app);
+    // 回線が不安定でも切れにくいように、必要なら自動で「ロングポーリング」接続に切り替える
+    let db;
+    try { db = fsM.initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); } catch (e) { db = fsM.getFirestore(app); }
+    const auth = authM.getAuth(app);
     const user = await new Promise((res, rej) => {
       authM.onAuthStateChanged(auth, (u) => { if (u) res(u); else authM.signInAnonymously(auth).catch(rej); }, rej);
     });
@@ -1323,6 +1394,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     B[0].setActor(chars[0]); B[1].setActor(chars[1]);
     B.forEach((b) => b.move(0));
     setBg(room.bg || BATTLEBACKS[0]);
+    preloadBgm();
     renderStatus(); say('');
     $('#select').style.display = 'none';
     const bt = $('#battle'); bt.hidden = false; bt.style.display = 'grid';
@@ -1487,23 +1559,48 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   })();
 
   // 素材（公開ページでは素材パック）を読み込んでから、顔グラ・エフェクトを用意する
+  // 素材パックの展開後に、すでに出ているキャラ・背景を本物に付け直す
+  function refreshArt() {
+    if (!state) return;
+    B.forEach((b, i) => b.setActor(chars[i]));
+    if (curBg) setBg(curBg);
+  }
+  // BGMは大きいので、バトルを始めた時に裏で読み込む。読み込めた時点で、すでに開始済みなら鳴らし始める
+  function preloadBgm() {
+    if (lite || !PACK_BGM) return;
+    // 対戦の通信を邪魔しないよう、少し待ってから、低優先度で読み込む
+    setTimeout(() => {
+      if (lite) return;
+      loadPack(PACK_BGM, null, true).then((done) => {
+        if (done && $('#startOverlay').style.display === 'none' && !bgmOn) startBGM();
+      });
+    }, 2500);
+  }
   async function bootAssets() {
-    const ok = await loadPack(PACK_CORE);
-    if (ok) {
-      if (typeof effekseer === 'undefined' && window.PCB_ASSETS['effect/effekseer.min.js']) {
-        await new Promise((res) => {
+    const st = $('#loadStatus'), say = (t) => { if (st) st.textContent = t; };
+    if (PACK_CORE) {
+      $('#btnStart').disabled = true;
+      say('素材を読み込み中… 0%');
+      const ok = await loadPack(PACK_CORE, (p) => say('素材を読み込み中… ' + Math.round(p * 100) + '%'));
+      $('#btnStart').disabled = false;
+      say(ok ? '' : '素材を読み込めなかったため、簡易表示で動きます');
+      if (ok) { buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1); refreshArt(); }
+    }
+    // エフェクト（Effekseer）は、軽量モードでは読み込まない（CSSの簡易演出になる）
+    if (!lite) {
+      // エフェクトの定義・テクスチャ（小さい）と、ランタイムのJSを、並べて読む
+      const fxPack = PACK_FX ? loadPack(PACK_FX) : Promise.resolve(true);
+      let jsReady = Promise.resolve();
+      if (typeof effekseer === 'undefined' && (FX_JS || window.PCB_ASSETS['effect/effekseer.min.js'])) {
+        jsReady = new Promise((res) => {
           const s = document.createElement('script');
-          s.src = window.PCB_ASSETS['effect/effekseer.min.js']; s.onload = res; s.onerror = res;
+          s.src = FX_JS || window.PCB_ASSETS['effect/effekseer.min.js']; s.onload = res; s.onerror = res;
           document.head.appendChild(s);
         });
       }
-      buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
-      // BGMは大きいので、あとから裏で読み込む。読み込めた時点で、すでに開始済みなら鳴らし始める
-      if (PACK_BGM) loadPack(PACK_BGM).then((done) => {
-        if (done && $('#startOverlay').style.display === 'none' && !bgmOn) startBGM();
-      });
+      await Promise.all([fxPack, jsReady]);
+      initFX();
     }
-    initFX();
   }
 
   // 初期化
