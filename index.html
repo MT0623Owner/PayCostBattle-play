@@ -145,10 +145,10 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
       <li>毎ラウンド、お互いに同時に1つ選びます。</li>
       <li><b>攻撃</b>：コスト−5を払って、相手に10ダメージ。</li>
       <li><b>貯める</b>：HPが+5。次の攻撃が2倍になります（実際に回復できた時だけ）。</li>
-      <li><b>防御</b>：コストなしで相手の攻撃を防ぎます。ただし連続で使うほど成功率が下がります（100→75→50→25→0％）。失敗すると通常どおりダメージを受けます。</li>
+      <li><b>防御</b>：コストなしで相手の攻撃を防ぎます。ただし連続で使うほど失敗しやすくなり、続けると必ず失敗します。失敗すると通常どおりダメージを受けます。</li>
       <li>防御の次は「貯める」を選べません。一度攻撃を挟みます。</li>
       <li>お互いに同じ手を出すと（あいこ）、両者−2です。</li>
-      <li>攻撃は一定確率でクリティカル。ダメージに加えて、相手から5を奪います。HPが相手より低いほど出やすくなります。</li>
+      <li>攻撃は時々クリティカルになります。ダメージに加えて、相手から5を奪います。HPが相手より低いほど出やすくなります。</li>
     </ul>
   </details>
 
@@ -271,14 +271,14 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
         } else {
           const sr = succRate(S.ds[j]);
           if (rnd() < sr) {
-            if (n) L.push(`${n[j]}の防御が成功（成功率${pct(sr)}）。ダメージ0。${n[i]}はコスト−${cfg.attackCost}`);
+            if (n) L.push(`${n[j]}の防御が成功。ダメージ0。${n[i]}はコスト−${cfg.attackCost}`);
           } else {
             delta[j] -= dmg; failed[j] = true;
             if (cfg.failCrit) {
               forceCrit = true;
               failDrain = Math.min(cfg.failDrainCap, cfg.failDrainUnit * (S.ds[j] + 1));
-              if (n) L.push(`${n[j]}の防御が失敗（成功率${pct(sr)}）。${dmg}ダメージ、攻撃は確定クリティカル`);
-            } else if (n) L.push(`${n[j]}の防御が失敗（成功率${pct(sr)}）。防げず通常どおり${dmg}ダメージ。${n[i]}はコスト−${cfg.attackCost}`);
+              if (n) L.push(`${n[j]}の防御が失敗。${dmg}ダメージ、攻撃は確定クリティカル`);
+            } else if (n) L.push(`${n[j]}の防御が失敗。防げず通常どおり${dmg}ダメージ。${n[i]}はコスト−${cfg.attackCost}`);
           }
         }
         const rate = critRate(S.hp, i);
@@ -286,9 +286,7 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
         if (forceCrit || rolled) {
           const dr = failDrain || cfg.drain * (cmd[j] === 'C' ? 2 : 1);
           delta[j] -= dr; delta[i] += dr;
-          if (n) L.push(`クリティカル${forceCrit ? '（防御失敗）' : `（発動率${pct(rate)}）`}：${n[i]}が${n[j]}から${dr}ドレイン${cmd[j] === 'C' && !forceCrit ? '（貯め中なので2倍）' : ''}`);
-        } else if (n && (cfg.critBase > 0 || cfg.critK > 0)) {
-          L.push(`クリティカルは不発（発動率${pct(rate)}）`);
+          if (n) L.push(`クリティカル${forceCrit ? '（防御失敗）' : ''}：${n[i]}が${n[j]}から${dr}ドレイン${cmd[j] === 'C' && !forceCrit ? '（貯め中なので2倍）' : ''}`);
         }
       } else if (cmd[i] === 'C') {
         delta[i] += cfg.heal;
@@ -401,12 +399,12 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
     const S = G;
     if (c === 'A') {
       const m = S.ch[i] ? cfg.chargeMult : 1;
-      const crit = (cfg.critBase > 0 || cfg.critK > 0) ? `／クリ${pct(critRate(S.hp, i))}` : '';
+      const crit = '';
       return `コスト−${cfg.attackCost}／ダメージ${cfg.damage * m}${m > 1 ? '（貯め後）' : ''}${crit}`;
     }
     if (c === 'C') return `+${cfg.heal}回復／次の攻撃${cfg.chargeMult}倍${S.hp[i] >= cfg.hp ? '（HP上限なので倍率なし）' : ''}`;
     if (!(cfg.defStep > 0)) return 'コストなし／攻撃を完全に防ぐ';
-    if (!cfg.failCrit) return `コストなし／成功率${pct(succRate(S.ds[i]))}（連続で低下）／失敗は通常ダメージ`;
+    if (!cfg.failCrit) return 'コストなし／連続で使うと失敗しやすくなる';
     return `コストなし／成功率${pct(succRate(S.ds[i]))}／失敗で確定クリ（ドレイン${Math.min(cfg.failDrainCap, cfg.failDrainUnit * (S.ds[i] + 1))}）`;
   }
   function cmdButtons(i, onPick, selected) {
@@ -432,8 +430,7 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
     const chips = [];
     chips.push(`<span class="chip ${S.last[i] ? CLS[S.last[i]] : ''}">前の手：${S.last[i] ? NAMES[S.last[i]] : 'なし'}</span>`);
     if (S.ch[i]) chips.push(`<span class="chip warn">次の攻撃${cfg.chargeMult}倍</span>`);
-    if (cfg.defStep > 0) chips.push(`<span class="chip">防御連続${S.ds[i]}回（次の成功率${pct(succRate(S.ds[i]))}）</span>`);
-    if (cfg.critBase > 0 || cfg.critK > 0) chips.push(`<span class="chip">クリ率${pct(critRate(S.hp, i))}</span>`);
+    if (cfg.defStep > 0 && S.ds[i] > 0) chips.push(`<span class="chip">防御連続${S.ds[i]}回</span>`);
     if (S.first === i) chips.push(`<span class="chip warn">先攻</span>`);
     return `<div class="fighter"><h2>${n}</h2><div class="hp">${Math.max(0, S.hp[i])}<small> / ${cfg.hp}</small></div>
       <div class="track"><div class="fill${p <= 25 ? ' low' : ''}" style="width:${p}%"></div></div>
