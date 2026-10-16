@@ -74,7 +74,7 @@ select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--w
 .fx { position: absolute; inset: 0; pointer-events: none; }
 #fxgl { position: absolute; left: 0; top: 0; width: 816px; height: 480px; pointer-events: none; }
 .pop { position: absolute; transform: translate(-50%, 0); font-weight: 900; font-size: 64px; font-style: italic; color: #fff; -webkit-text-stroke: 5px #14204f; paint-order: stroke fill; text-shadow: 0 3px 0 rgba(0, 0, 0, .35); animation: pop 1s ease-out forwards; white-space: nowrap; }
-.pop.heal { color: #8cffb0; } .pop.cost { color: #ffc27a; font-size: 42px; } .pop.drain { color: #b6ff6b; font-size: 72px; }
+.pop.heal { color: #8cffb0; } .pop.lose { color: #ff7a7a; font-size: 56px; } .pop.cost { color: #ffc27a; font-size: 42px; } .pop.drain { color: #b6ff6b; font-size: 72px; }
 .pop.big { font-size: 48px; color: #ffe45e; letter-spacing: .08em; }
 .pop.text { font-size: 42px; font-style: normal; }
 .pop.text.def { color: #9cc4ff; } .pop.text.bad { color: #ff8a8a; }
@@ -87,19 +87,23 @@ select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--w
 @keyframes shake { 0%, 100% { translate: 0 0; } 20% { translate: -8px 0; } 40% { translate: 7px 0; } 60% { translate: -5px 0; } 80% { translate: 3px 0; } }
 
 /* ステータスウィンドウ（MZ風） */
-.status { position: absolute; top: 12px; width: 352px; padding: 12px 16px; }
-.status.right { right: 12px; } .status.left { left: 12px; }
-.status .nm { display: flex; justify-content: space-between; align-items: baseline; font-size: 30px; font-weight: 800; }
-.status .nm small { font-weight: 500; color: var(--muted); font-size: 19px; }
-.gauge { height: 22px; background: #101640; border: 3px solid #fff; border-radius: 10px; overflow: hidden; margin-top: 4px; }
+.status { position: absolute; top: 10px; width: 236px; padding: 7px 12px; transition: box-shadow .25s, border-color .25s; }
+.status.gain { box-shadow: 0 0 0 3px #6bff9a, 0 0 22px #6bff9a; border-color: #6bff9a; }
+.status.loss { box-shadow: 0 0 0 3px #ff6b6b, 0 0 22px #ff6b6b; border-color: #ff6b6b; }
+.status.right { right: 10px; } .status.left { left: 10px; }
+.status .nm { display: flex; justify-content: space-between; align-items: baseline; font-size: 20px; font-weight: 800; }
+.status .nm small { font-weight: 500; color: var(--muted); font-size: 14px; }
+.gauge { height: 14px; background: #101640; border: 2px solid #fff; border-radius: 8px; overflow: hidden; margin-top: 2px; }
 .gauge i { display: block; height: 100%; width: 100%; background: linear-gradient(#8bffbb, var(--hp)); transition: width .5s ease-out; }
 .gauge i.low { background: linear-gradient(#ff9a9a, var(--hp-low)); }
-.hpnum { font-size: 46px; line-height: 1.1; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
-.hpnum small { font-size: 22px; color: var(--muted); font-weight: 500; }
-.chips { display: flex; gap: 6px; min-height: 22px; flex-wrap: wrap; }
-.chip { font-size: 18px; padding: 1px 12px; border-radius: 999px; border: 2px solid var(--win-line); }
+.hpnum { font-size: 28px; line-height: 1.1; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.hpnum .dl { font-size: 20px; margin-right: 8px; font-weight: 900; }
+.hpnum .dl.up { color: #6bff9a; } .hpnum .dl.dn { color: #ff7a7a; }
+.hpnum small { font-size: 14px; color: var(--muted); font-weight: 500; }
+.chips { display: flex; gap: 4px; min-height: 18px; flex-wrap: wrap; margin-top: 2px; }
+.chip { font-size: 13px; padding: 0 9px; border-radius: 999px; border: 2px solid var(--win-line); }
 .chip.on { background: rgba(255, 213, 74, .25); border-color: #ffd54a; color: #ffe9a0; }
-.msg { position: absolute; left: 50%; top: 392px; transform: translateX(-50%); max-width: 760px; text-align: center; font-size: 34px; font-weight: 800; padding: 8px 22px; background: var(--win-bg); border: 2px solid var(--win-line); border-radius: 10px; opacity: 0; transition: opacity .15s; white-space: nowrap; }
+.msg { position: absolute; left: 50%; top: 430px; transform: translateX(-50%); max-width: 760px; text-align: center; font-size: 24px; font-weight: 800; padding: 4px 18px; background: var(--win-bg); border: 2px solid var(--win-line); border-radius: 10px; opacity: 0; transition: opacity .15s; white-space: nowrap; }
 .msg.on { opacity: 1; }
 .banner { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .45); opacity: 0; pointer-events: none; transition: opacity .3s; }
 .banner.on { opacity: 1; pointer-events: auto; }
@@ -543,6 +547,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- 状態 ----------
   const cfg = PCB.makeConfig();
+  // 手元の確認用：?jgstep=0.2&jgcap=0.6 で、連続防御ごとのジャストガード率の加算を試せる
+  { const qp = new URLSearchParams(location.search); if (qp.has('jgstep')) cfg.jgStep = parseFloat(qp.get('jgstep')) || 0; if (qp.has('jgcap')) cfg.jgCap = parseFloat(qp.get('jgcap')) || cfg.jgCap; }
   // ルール設定（初期HP・クリティカルの有無）。選択画面の設定を cfg に反映する。
   // クリティカルなし＝発動率を0にする（基本率・HP差補正・上限をすべて0）。
   function applyRules() {
@@ -962,12 +968,28 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     const chips = [];
     if (state.ch[i]) chips.push(`<span class="chip on">◆貯め済み×${cfg.chargeMult}</span>`);
     if (state.ds[i] > 0) chips.push(`<span class="chip">防御連続${state.ds[i]}</span>`);
+    const d = hpDelta[i] ? `<span class="dl ${hpDelta[i] > 0 ? 'up' : 'dn'}">${hpDelta[i] > 0 ? '▲+' : '▼'}${hpDelta[i]}</span>` : '';
     return `<div class="nm"><span>${nameOf(i)}</span><small>${charLabel(chars[i])}</small></div>
-      <div class="hpnum">${hp}<small> / ${cfg.hp}</small></div>
+      <div class="hpnum">${d}${hp}<small> / ${cfg.hp}</small></div>
       <div class="gauge"><i class="${low ? 'low' : ''}" style="width:${hp / cfg.hp * 100}%"></i></div>
       <div class="chips">${chips.join('')}</div>`;
   }
+  // HPが増減したら、数字の横に増減（▲+5／▼10）を少しの間出し、ステータス枠を緑（増）／赤（減）に光らせる
+  const hpDelta = [0, 0], hpShown = [null, null], hpTok = [0, 0];
   function renderStatus() {
+    for (let i = 0; i < 2; i++) {
+      const h = viewHp(i);
+      if (hpShown[i] !== null && h !== hpShown[i]) {
+        const diff = h - hpShown[i];
+        hpDelta[i] = (hpDelta[i] !== 0 && (hpDelta[i] > 0) === (diff > 0)) ? hpDelta[i] + diff : diff;   // 続けて同じ向きに変わったら足し合わせる
+        const tok = ++hpTok[i];
+        const el = $('#st' + i), e0 = epoch;
+        el.classList.remove('gain', 'loss'); void el.offsetWidth; el.classList.add(diff > 0 ? 'gain' : 'loss');
+        setTimeout(() => { el.classList.remove('gain', 'loss'); }, 700);
+        setTimeout(() => { if (e0 === epoch && hpTok[i] === tok) { hpDelta[i] = 0; renderStatus(); } }, 1600);
+      }
+      hpShown[i] = h;
+    }
     $('#st0').innerHTML = statusHTML(0);
     $('#st1').innerHTML = statusHTML(1);
     B.forEach((b, i) => b.el.classList.toggle('charged', !!state.ch[i]));
@@ -1053,7 +1075,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           playSE(SE.just, 0.9);
           setTimeout(() => playSE(SE.drain, 0.85), 380 * speed);   // ジャストガードの音のあとにも、ドレインの音
           a.setMotion('damage', false); flash(ev.from); shake();
-          pop(ev.from, `−${ev.just.reflect}`, 'drain', 10, 20);
+          pop(ev.from, `−${ev.just.reflect}`, 'lose', 10, 20);
           view.hp[ev.from] -= ev.just.reflect; renderStatus();
           say(`ジャストガード！ ${nameOf(ev.from)}に${ev.just.reflect}反射`);
           await sleep(480);
@@ -1080,14 +1102,14 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         if (ev.crit.reflected) {
           // ジャストガードとクリティカルが重なった：奪われるはずだった分を、攻撃側が受ける
           flash(ev.from);
-          pop(ev.from, `−${ev.crit.amount}`, 'drain', 10, 20);
+          pop(ev.from, `−${ev.crit.amount}`, 'lose', 10, 20);
           say(`クリティカルを見切った！ ${nameOf(ev.from)}が${ev.crit.amount}を受けた！`);
           view.hp[ev.from] -= ev.crit.amount; renderStatus();
         } else {
         drainFx(ev.to, ev.from); flash(ev.to);
         playFX('heal', ev.from, { dy: -70 });                      // 吸収：奪った側に、回復（HealAll2）のエフェクト
-        pop(ev.to, `−${ev.crit.amount}`, 'drain', 10, 20);
-        setTimeout(() => pop(ev.from, `+${ev.crit.amount}`, 'heal', 0), 480 * speed);
+        pop(ev.to, `−${ev.crit.amount}`, 'lose', 10, 20);                        // 奪われた側：赤
+        setTimeout(() => { pop(ev.from, `+${ev.crit.amount}`, 'heal', 0); popText(ev.from, '吸収！', 'def'); }, 480 * speed);   // 奪った側：緑
         say(`クリティカル！ ${ev.crit.amount}を奪った！`);
         view.hp[ev.to] -= ev.crit.amount; view.hp[ev.from] += ev.crit.amount; renderStatus();
         }
@@ -1132,6 +1154,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 進行中の演出・効果音・表示をすべて止める（メニューに戻る時／新しいバトルの前）
   function abortPresentation() {
     epoch++;
+    hpDelta[0] = hpDelta[1] = 0; hpShown[0] = hpShown[1] = null;
     stopAllSE();
     busy = false; skip = false; view = null;
     try { hideTags(); } catch (e) { /* 無視 */ }

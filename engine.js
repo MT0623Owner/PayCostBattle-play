@@ -32,7 +32,8 @@
     jgBase: 0.10,       // ジャストガード基本率（クリティカルと同じ式：自分のHPが相手より低いほど上がる）
     jgK: 0.008,
     jgCap: 0.50,
-    reflect: 5,         // ジャストガード時、攻撃側に返す反射ダメージ
+    jgStep: 0,          // 連続で防御に成功した回数1回あたり、ジャストガード率に足す分（0＝足さない）
+    reflect: 5,        // ジャストガード時、攻撃側に返す反射ダメージ
     lowChargeRatio: 0.10 // 自分のHPがこの割合（上限比）未満なら、防御の次でも「貯め」を選べる
   };
 
@@ -56,9 +57,9 @@
   }
 
   // 自分(i)のジャストガード率（防御成功時に判定）。自分のHPが相手より低いほど上がる
-  function jgRate(hp, i, cfg) {
+  function jgRate(hp, i, cfg, ds) {
     if (!cfg.justGuard) return 0;
-    return Math.min(cfg.jgCap, cfg.jgBase + Math.max(0, hp[1 - i] - hp[i]) * cfg.jgK);
+    return Math.min(cfg.jgCap, cfg.jgBase + Math.max(0, hp[1 - i] - hp[i]) * cfg.jgK + (cfg.jgStep || 0) * (ds || 0));
   }
 
   function newState(cfg) {
@@ -96,7 +97,7 @@
           ev.succ = sr;
           if (rnd() < sr) {
             ev.blocked = true;
-            const jr = jgRate(S.hp, j, cfg);
+            const jr = jgRate(S.hp, j, cfg, S.ds[j]);
             ev.just.rate = jr;
             if (jr > 0 && rnd() < jr) { ev.just.hit = true; ev.just.reflect = cfg.reflect; delta[i] -= cfg.reflect; }
           } else { delta[j] -= dmg; ev.defFailed = true; failed[j] = true; }
