@@ -1068,7 +1068,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     if (c === 'C') return `+${cfg.heal}回復／次の攻撃${cfg.chargeMult}倍`;
     return 'コストなし／相手の攻撃を防ぐ（連続で失敗しやすい）';
   }
+  const thinkMs = [null, null], shownAt = [0, 0];     // 手を選ぶまでにかかった時間（ログ用）
   function cmdGroup(i, onPick, selected) {
+    shownAt[i] = performance.now();
     const ok = PCB.allowed(state.last[i], cfg, state.hp[i]);
     const g = document.createElement('div'); g.className = 'cmds';
     ['A', 'C', 'D'].forEach((c) => {
@@ -1077,7 +1079,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       b.disabled = busy || state.over || !ok.includes(c);
       const reason = !ok.includes(c) ? (c === 'D' ? '溜めた次は防御できない' : '防御した次は溜められない') : info(c, i);
       b.innerHTML = `<span class="name">${NAMES[c]}</span><span class="info">${reason}</span>`;
-      b.addEventListener('click', () => { b.blur(); onPick(c); });   // フォーカスを外す（次の人の画面に、選択の見た目が残らないように）
+      b.addEventListener('click', () => { b.blur(); thinkMs[i] = Math.round(performance.now() - shownAt[i]); onPick(c); });   // フォーカスを外す（次の人の画面に、選択の見た目が残らないように）
       g.appendChild(b);
     });
     return g;
@@ -1238,14 +1240,15 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 1ラウンドの結果(r)を演出する。finalState があれば、演出後にそれを状態にする（オンライン）。無ければ r を適用する。
   // ---------- 対戦ログ（このブラウザの localStorage に保存。次に開いた時も残る） ----------
   const LOG_KEY = 'pcb_log_v1', LOG_MAX = 150;
+  const RULES_VER = '2026-10-16c';                   // ルールや設定が変わったら更新する（ログの比較用）
   let LOGS = [];
   try { LOGS = JSON.parse(localStorage.getItem(LOG_KEY) || '[]') || []; } catch (e) { LOGS = []; }
   let curLog = null;
   const NAMES_CMD = { A: '攻撃', C: '溜め', D: '防御' };
   function logSave() { try { localStorage.setItem(LOG_KEY, JSON.stringify(LOGS.slice(-LOG_MAX))); } catch (e) { /* 容量不足などは無視 */ } }
   function logStart() {
-    const rules = { hp: cfg.hp, crit: (cfg.critBase > 0 || cfg.critK > 0) ? 1 : 0, justGuard: cfg.justGuard ? 1 : 0, jgStep: cfg.jgStep || 0, jgCap: cfg.jgCap, reflect: cfg.reflect, cpu: mode === 'cpu' ? diff : '' };
-    curLog = { id: Date.now().toString(36), t: new Date().toISOString(), mode, rules,
+    const rules = { hp: cfg.hp, crit: (cfg.critBase > 0 || cfg.critK > 0) ? 1 : 0, justGuard: cfg.justGuard ? 1 : 0, jgStep: cfg.jgStep || 0, jgCap: cfg.jgCap, reflect: cfg.reflect, cpu: mode === 'cpu' ? diff : '', loadAtCap: cfg.loadAtCap ? 1 : 0, ver: RULES_VER };
+    curLog = { id: Date.now().toString(36), t: new Date().toISOString(), mode, rules, player: (($('#onName') && $('#onName').value) || '').trim().slice(0, 12), device: (navigator.maxTouchPoints > 0 ? 'touch' : 'pc'),
                names: [nameOf(0), nameOf(1)], chars: [charLabel(chars[0]) || ('CPU' + chars[0]), charLabel(chars[1]) || ('CPU' + chars[1])],
                rounds: [], result: null };
     LOGS.push(curLog); logSave();
@@ -1262,10 +1265,14 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     if (ev.t === 'mirror') return 'あいこ−' + ev.amount;
     return '';
   }
-  function logRound(cmd, r, hpBefore, hpAfter, round) {
+  // 攻撃ごとの確率（ガード成功率・ジャストガード率・クリティカル率）。運が良かったか悪かったかを、あとで測るため
+  function rollText(events) {
+    return events.filter((e) => e.t === 'attack').map((e) => 'P' + (e.from + 1) + '攻撃[' + (e.defended ? 'ガード成功率' + Math.round((e.succ || 0) * 100) + '% ジャスガ率' + Math.round(((e.just && e.just.rate) || 0) * 100) + '% ' : '') + 'クリ率' + Math.round(((e.crit && e.crit.rate) || 0) * 100) + '%]').join(' / ');
+  }
+  function logRound(cmd, r, hpBefore, hpAfter, round, st) {
     if (!curLog) return;
     const nm = ['P1', 'P2'];
-    curLog.rounds.push({ n: round, cmd: cmd.slice(), before: hpBefore, after: hpAfter, ev: r.events.map((e) => evText(e, nm)).filter(Boolean).join(' / ') });
+    curLog.rounds.push({ n: round, cmd: cmd.slice(), before: hpBefore, after: hpAfter, think: thinkMs.slice(), st: st || null, rolls: rollText(r.events), ev: r.events.map((e) => evText(e, nm)).filter(Boolean).join(' / ') });
     logSave();
   }
   function logFinish(res) {
@@ -1299,9 +1306,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   $('#logJson').addEventListener('click', () => logDownload('pcb-log.json', JSON.stringify(LOGS, null, 1), 'application/json'));
   $('#logCsv').addEventListener('click', () => {
     const q = (v) => '"' + String(v).split('"').join('""') + '"';
-    const head = ['match', 'time', 'mode', 'P1', 'P2', 'result', 'hp', 'justGuard', 'jgStep', 'jgCap', 'cpu', 'round', 'cmd1', 'cmd2', 'hp1_before', 'hp2_before', 'hp1_after', 'hp2_after', 'events'];
+    const head = ['match', 'time', 'mode', 'P1', 'P2', 'result', 'hp', 'justGuard', 'jgStep', 'jgCap', 'cpu', 'ver', 'loadAtCap', 'player', 'device', 'round', 'cmd1', 'cmd2', 'hp1_before', 'hp2_before', 'hp1_after', 'hp2_after', 'think1_ms', 'think2_ms', 'loaded1', 'loaded2', 'guard_streak1', 'guard_streak2', 'rolls', 'events'];
     const lines = [head.join(',')];
-    LOGS.forEach((m) => m.rounds.forEach((r) => lines.push([m.id, m.t, m.mode, m.chars[0], m.chars[1], m.result || '', (m.rules || {}).hp, (m.rules || {}).justGuard, (m.rules || {}).jgStep, (m.rules || {}).jgCap, (m.rules || {}).cpu, r.n, r.cmd[0], r.cmd[1], r.before[0], r.before[1], r.after[0], r.after[1], r.ev].map(q).join(','))));
+    LOGS.forEach((m) => m.rounds.forEach((r) => lines.push([m.id, m.t, m.mode, m.chars[0], m.chars[1], m.result || '', (m.rules || {}).hp, (m.rules || {}).justGuard, (m.rules || {}).jgStep, (m.rules || {}).jgCap, (m.rules || {}).cpu, (m.rules || {}).ver, (m.rules || {}).loadAtCap, m.player || '', m.device || '', r.n, r.cmd[0], r.cmd[1], r.before[0], r.before[1], r.after[0], r.after[1], (r.think || [])[0] ?? '', (r.think || [])[1] ?? '', r.st ? r.st.ch[0] : '', r.st ? r.st.ch[1] : '', r.st ? r.st.ds[0] : '', r.st ? r.st.ds[1] : '', r.rolls || '', r.ev].map(q).join(','))));
     logDownload('pcb-log.csv', '\uFEFF' + lines.join('\r\n'), 'text/csv');
   });
   $('#logClear').addEventListener('click', () => { if (confirm('保存されている対戦ログを、すべて消します。よろしいですか？')) { LOGS = []; curLog = null; logSave(); logRender(); } });
@@ -1313,6 +1320,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     if (busy) return;
     busy = true; skip = false; renderCommands();
     const hpBefore = state.hp.slice();
+    const stBefore = { ch: state.ch.map((x) => (x ? 1 : 0)), ds: state.ds.slice() };   // 溜め済み・連続防御（ログ用）
     view = { hp: state.hp.slice() };
     hideTags();
     showTags(cmd);
@@ -1324,7 +1332,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     // 結果を反映
     view = null;
     if (finalState) Object.assign(state, finalState); else PCB.apply(state, cmd, r);
-    logRound(cmd, r, hpBefore, state.hp.slice(), state.round - 1);
+    logRound(cmd, r, hpBefore, state.hp.slice(), state.round - 1, stBefore);
+    thinkMs[0] = thinkMs[1] = null;
     pick = [null, null]; phase = 'p1';
     renderStatus();
     await sleep(520);

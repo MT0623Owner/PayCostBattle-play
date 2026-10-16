@@ -34,6 +34,7 @@
     jgCap: 0.50,
     jgStep: 0,          // 連続で防御に成功した回数1回あたり、ジャストガード率に足す分（0＝足さない）
     reflect: 5,        // ジャストガード時、攻撃側に返す反射ダメージ
+    loadAtCap: 0,       // 1なら、HPが上限でも「溜め」で次の攻撃が2倍になる（回復はしない）
     lowChargeRatio: 0.10 // 自分のHPがこの割合（上限比）未満なら、防御の次でも「溜め」を選べる
   };
 
@@ -114,7 +115,7 @@
       } else if (cmd[i] === 'C') {
         const atCap = S.hp[i] >= cfg.hp;
         delta[i] += cfg.heal;
-        if (!atCap) loaded[i] = true;
+        if (!atCap || cfg.loadAtCap) loaded[i] = true;
         events.push({ t: 'charge', who: i, gain: cfg.heal, loaded: !atCap, atCap });
       } else if (cmd[j] !== 'A') {
         events.push({ t: 'guardIdle', who: i });
@@ -188,7 +189,7 @@
         att.push({ i, j, dmg, rate: critRate(S.hp, i, cfg), defending,
                    sr: defending ? succRate(S.ds[j], cfg) : 0, jr: defending ? jgRate(S.hp, j, cfg, S.ds[j]) : 0,
                    drain: cfg.drain * (cmd[j] === 'C' ? 2 : 1) });
-      } else if (cmd[i] === 'C') { delta[i] += cfg.heal; loaded[i] = S.hp[i] < cfg.hp; }
+      } else if (cmd[i] === 'C') { delta[i] += cfg.heal; loaded[i] = S.hp[i] < cfg.hp || !!cfg.loadAtCap; }
     }
     let br = [{ p: 1, dl: delta.slice() }];
     for (const a of att) {
