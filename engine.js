@@ -269,6 +269,10 @@
   }
   let HARD_NOISE = 0.08;   // 「つよい」が、ランダムな手を混ぜる割合（大きいほど弱い）
   function setHardNoise(x) { HARD_NOISE = x; }
+  let lastDbg = null;
+  function getDbg() { return lastDbg; }
+  let SOFT_TEMP = 0.006;   // 「最強」の選び方のなだらかさ（期待勝率で0.6％の差が、確率でe倍の差）。小さいほど、一番良い手に固定される
+  function setSoftTemp(x) { SOFT_TEMP = x; }
   let EXPLOIT = 0.6, USE_PRIOR = true;
   function setExploit(x, usePrior) { EXPLOIT = x; if (usePrior !== undefined) USE_PRIOR = usePrior; }
   function cpuMax(S, i, cfg, rnd) {
@@ -291,13 +295,15 @@
     const w = hp ? EXPLOIT : EXPLOIT * Math.min(1, model.n / 4);   // 傾向が無い時は、観測が少ないうちは予測を信じすぎない
     const qq = okOpp.map((_, k) => w * pm[k] + (1 - w) * q[k]);
     const val = ok.map((_, r) => qq.reduce((acc, qk, k) => acc + qk * A[r][k], 0));
-    let best = 0;
-    for (let r = 1; r < ok.length; r++) if (val[r] > val[best] + 1e-9) best = r;
-    // 均衡でも同じくらい良い手があるなら、均衡の混ぜ方で選ぶ（読まれにくくする）
-    const near = ok.map((_, r) => val[r] >= val[best] - 0.004);
-    const pe = eq.p.map((x, r) => near[r] ? x : 0), te = pe.reduce((x, y) => x + y, 0);
-    if (te > 1e-9) { let x = rnd() * te, acc = 0; for (let r = 0; r < ok.length; r++) { acc += pe[r]; if (x < acc) return ok[r]; } }
-    return ok[best];
+    lastDbg = { ok, okOpp, A, q, pm, w, qq, val, eqp: eq.p };
+    // 期待勝率の差が小さい手どうしは、ほぼ同じ価値（勝率表は近似なので、1〜2％の差は誤差の範囲）。
+    // そこで、期待勝率に比例した重み（ソフトマックス）で選ぶ。差が大きい手は、ほぼ確実にそちらを選ぶ。
+    // こうしないと、似た局面で毎回同じ手を出してしまい、読まれる（序盤の防御・防御・防御→攻撃を突かれた）。
+    const top = Math.max.apply(null, val);
+    const wts = val.map((v) => Math.exp((v - top) / SOFT_TEMP)), tw = wts.reduce((x, y) => x + y, 0);
+    let x = rnd() * tw;
+    for (let r = 0; r < ok.length; r++) { x -= wts[r]; if (x <= 0) return ok[r]; }
+    return ok[ok.length - 1];
   }
 
   /** CPUの手。相手の現在の手は見ない（履歴と盤面のみ）。diff＝'easy'|'normal'|'hard'|'max' */
@@ -351,7 +357,7 @@
     return best;
   }
 
-  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose, setEqTable, setExploit, setHardNoise, humanProb };
+  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose, setEqTable, setExploit, setHardNoise, setSoftTemp, humanProb, getDbg };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PCB = api;
 })(typeof window !== 'undefined' ? window : globalThis);
