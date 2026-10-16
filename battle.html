@@ -258,6 +258,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           <option value="easy">かんたん</option>
           <option value="normal" selected>ふつう</option>
           <option value="hard">つよい</option>
+          <option value="max">最強</option>
         </select>
       </span>
     </div>
@@ -402,6 +403,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const PACK_BG = 'assets/bg-';                                            // 公開ページでは 'assets/bg-'（背景は 'assets/bg-<名前>.pack' を、使う分だけ読む）
   const FX_JS = 'assets/effekseer.min.js';                                              // 公開ページでは 'assets/effekseer.min.js'（Effekseerのランタイム。MITライセンスの生ファイル）
   const FX_WASM = 'assets/effekseer.wasm';                                            // 公開ページでは 'assets/effekseer.wasm'
+  const PACK_VOICE = 'assets/voice-';                                         // 公開ページでは 'assets/voice-'（キャラのボイスは 'assets/voice-<名前>.pack'）
   const PACK_BGM = 'assets/';                                           // 公開ページでは 'assets/'（BGMは 'assets/bgm-<曲名>.pack' を、選ばれた1曲だけ読む）
   // 軽量モード：エフェクトのランタイム・BGMを読み込まず、画面効果を減らす（回線や端末が弱い時用）。
   // 初回は、通信が遅い／データセーバー／端末が非力そうなら自動でオン。ボタンでいつでも切り替えられる。
@@ -433,7 +435,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 公開ページでは、画像・音声を1つのパックにまとめて置く（リポジトリに元の画像・音声ファイルを置かないため）。
   // 画面に出すだけで、元ファイルの形では置かない。パックは読み込み時にこの中で展開する。
   const PACK_KEY = new TextEncoder().encode('PayCostBattle-pack-v1');
-  const MIME = { png: 'image/png', ogg: 'audio/ogg', mp3: 'audio/mpeg', js: 'text/javascript', wasm: 'application/wasm', efkefc: 'application/octet-stream' };
+  const MIME = { png: 'image/png', wav: 'audio/wav', ogg: 'audio/ogg', mp3: 'audio/mpeg', js: 'text/javascript', wasm: 'application/wasm', efkefc: 'application/octet-stream' };
   // 4バイトずつXOR（キー21バイト×4＝84バイト＝21ワードの繰り返し）。1バイトずつ回すより速い
   function xorPack(u8) {
     const n = u8.length, words = n >> 2, L = PACK_KEY.length;
@@ -501,6 +503,46 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     } catch (e) { /* 無視 */ }
   }
   function stopAllSE() { seLive.forEach((a) => { try { a.pause(); } catch (e) { /* 無視 */ } }); seLive.clear(); }
+
+  // ---- キャラのボイス（audio/voice/<キャラ名>/*.wav。ある キャラだけ）。Web Audioで、音量をそろえて少し持ち上げて鳴らす ----
+  const VOICE_NAMES = ['Sanemi'];                                  // ボイスがあるキャラ（WI_NAMES の名前）
+  const VOICE_FILES = ['Attack_1', 'Attack_2', 'Critical_Attack', 'Critical_Damage', 'Damage_1', 'Damage_2', 'Defeat', 'Gurad', 'JustGurad_Attack', 'JustGurad_Damage', 'Powerup', 'Start', 'Win'];
+  const VOICE_RMS = 0.115;                                         // 目標の音量（RMS。約−19dB）。小さい声ほど大きく持ち上げる
+  const voiceBuf = {}, voiceLoading = {};
+  let voiceOut = null;
+  async function loadVoices(name) {
+    if (lite || !VOICE_NAMES.includes(name) || voiceLoading[name]) return;
+    const ctx = audioCtx();
+    if (!ctx) return;
+    voiceLoading[name] = (async () => {
+      if (PACK_VOICE) { const ok = await loadPack(PACK_VOICE + name + '.pack', null, true); if (!ok) return; }
+      await Promise.all(VOICE_FILES.map(async (f) => {
+        try {
+          const ab = await (await fetch(AS('audio/voice/' + name + '/' + f + '.wav'))).arrayBuffer();
+          const buf = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+          // 小さい声は持ち上げる（最大6倍）。ピークが割れないように上限をかける
+          let sum = 0, peak = 0, n = 0;
+          for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { const v = d[i]; sum += v * v; if (Math.abs(v) > peak) peak = Math.abs(v); } n += d.length; }
+          const rms = Math.sqrt(sum / Math.max(1, n)) || 0.01;
+          voiceBuf[name + '/' + f] = { buf, gain: Math.max(1, Math.min(VOICE_RMS / rms, 0.95 / (peak || 1), 6)) };
+        } catch (e) { /* 読めなかった声は鳴らさない */ }
+      }));
+    })();
+  }
+  function voiceName(side) { return charLabel(actorOf(side)); }
+  function playVoice(side, key) {
+    if (muted || lite || !actx) return;
+    const name = voiceName(side);
+    if (!VOICE_NAMES.includes(name)) return;
+    const v = voiceBuf[name + '/' + key];
+    if (!v) return;
+    try {
+      if (!voiceOut) { voiceOut = actx.createDynamicsCompressor(); voiceOut.connect(actx.destination); }   // 持ち上げた分の割れを防ぐ
+      const g = actx.createGain(); g.gain.value = v.gain;
+      const src = actx.createBufferSource(); src.buffer = v.buf; src.connect(g); g.connect(voiceOut); src.start(0);
+    } catch (e) { /* 無視 */ }
+  }
+  const pick2 = () => 1 + Math.floor(Math.random() * 2);
 
   // ---- BGM：OGGのループタグ（LOOPSTART／LOOPLENGTH。ツクールMZの形式）を読んで、ループ位置を守って繰り返す ----
   // Web Audio で曲を丸ごと展開して、loopStart／loopEnd を指定して再生する。展開すると数十MBのメモリを使うので、軽量モードでは使わない。
@@ -1084,9 +1126,11 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       a.setMotion('walk', true); a.move(dir * dist); playSE(SE.dash, 0.7);
       await sleep(360);
       a.setMotion('swing', false); playSE(SE.attack, ev.mult > 1 ? 0.95 : 0.75);   // 溜め後は大きめに
+      if (!ev.crit.hit) playVoice(ev.from, 'Attack_' + pick2());                       // クリティカルの時は、専用の声（下）
       await sleep(300);
       if (ev.blocked) {
         t.setMotion('guard', false); ring(ev.to); playSE(SE.guard, 0.8);
+        if (!(ev.just && ev.just.hit)) playVoice(ev.to, 'Gurad');
         popText(ev.to, 'ガード！', 'def');
         bigText('GUARD!', 'guard'); screenFlash('#bfe0ff', 300);
         say(`${nameOf(ev.to)}は攻撃を防いだ！`);
@@ -1095,6 +1139,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           await sleep(220);
           bigText('JUST GUARD!', 'just'); screenFlash('#ffffff', 420); zoomPunch(200);
           playSE(SE.just, 0.9);
+          playVoice(ev.to, 'JustGurad_Attack'); playVoice(ev.from, 'JustGurad_Damage');
           setTimeout(() => playSE(SE.drain, 0.85), 380 * speed);   // ジャストガードの音のあとにも、ドレインの音
           a.setMotion('damage', false); flash(ev.from); shake();
           pop(ev.from, `−${ev.just.reflect}`, 'lose', 10, 20);
@@ -1108,6 +1153,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         const mir = ev.to === 1;                                   // 右側が受ける時は左右反転
         if (!(playFX('slash', ev.to, { mirror: mir, dy: -15 }) && playFX('hit', ev.to, { mirror: mir }))) slash(ev.to);
         flash(ev.to); shake(); playSE(SE.damage, 0.8);
+        if (!ev.crit.hit) playVoice(ev.to, 'Damage_' + pick2());
         pop(ev.to, String(ev.dmg), '');
         view.hp[ev.to] -= ev.dmg; renderStatus();
         if (ev.mult > 1) { bigText(`×${ev.mult} 強打！`, 'charge'); zoomPunch(200); }
@@ -1120,6 +1166,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         screenFlash('#fff3b0', 560); burst(ev.to); zoomPunch(); bigText('CRITICAL!', 'crit');
         shake(); if (!lite) setTimeout(shake, 150 * speed);
         playSE(SE.crit, 0.9);
+        if (!ev.crit.reflected) { playVoice(ev.from, 'Critical_Attack'); playVoice(ev.to, 'Critical_Damage'); }
         setTimeout(() => playSE(SE.drain, 0.85), 380 * speed);       // クリティカルの音のあとに、ドレイン（吸収）の音
         if (ev.crit.reflected) {
           // ジャストガードとクリティカルが重なった：奪われるはずだった分を、攻撃側が受ける
@@ -1145,6 +1192,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const b = B[ev.who];
       say(`${nameOf(ev.who)}は力を溜めた！`);
       b.setMotion('chant', true); playSE(SE.charge, 0.8);
+      playVoice(ev.who, 'Powerup');
       playFX('power', ev.who, { dy: -70 });                      // 足元から立ち上るので、キャラの足元に置く
       if (ev.loaded) bigText('CHARGE!', 'charge');
       pop(ev.who, `+${ev.gain}`, 'heal');
@@ -1294,6 +1342,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     say('');
     const res = state.result;
     logFinish(res);
+    if (res !== 'draw') { playVoice(res, 'Win'); playVoice(1 - res, 'Defeat'); }
     let text, cls;
     if (res === 'draw') {
       text = 'DRAW'; cls = 'draw';
@@ -1328,10 +1377,20 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       f.classList.remove('on');
     }
   }
+  // 「最強」用：均衡の勝率表（web/eq/eq-<HP>-<クリ有無>.bin）。無い設定では、つよいと同じ動きになる
+  const EQ_BASE = 'eq/', eqCache = {};
+  async function loadEq() {
+    const crit = (cfg.critBase > 0 || cfg.critK > 0) ? 1 : 0, key = cfg.hp + '-' + crit, hp = cfg.hp;
+    if (!eqCache[key]) eqCache[key] = fetch(EQ_BASE + 'eq-' + key + '.bin').then((r) => r.ok ? r.arrayBuffer() : null).then((b) => b ? { H: hp, data: new Uint8Array(b) } : null).catch(() => null);
+    PCB.setEqTable(await eqCache[key]);
+  }
+  function loadVoicesFor() { [0, 1].forEach((i) => loadVoices(voiceName(i))); }
   function startBattle() {
     abortPresentation();
     refreshSelect();
     applyRules();
+    if (mode === 'cpu' && diff === 'max') loadEq(); else PCB.setEqTable(null);
+    loadVoicesFor();
     // CPU戦：CPUのキャラは、ランダム指定ならバトルごとに変える（自分と同じキャラにはならない）
     if (mode === 'cpu') chars[1] = randomCpu();   // CPUはActor1／SF版の12体からランダム
     state = PCB.newState(cfg);
@@ -1363,6 +1422,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     }
     $('#startOverlay').style.display = 'none';
     startBGM();
+    playVoice(0, 'Start'); setTimeout(() => playVoice(1, 'Start'), 700);
     say('バトル開始！');
     setTimeout(() => say(''), 900);
   });
@@ -1734,6 +1794,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     mode = 'online'; onlineNames = [me.name, op.name]; chars = [me.char, op.char];
     state = viewState(room.state, ONLINE.seat);
     logStart();
+    loadVoicesFor();
     ONLINE.nextShow = room.state.round;
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');

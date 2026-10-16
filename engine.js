@@ -165,10 +165,125 @@
     return { oppOk, p, n };
   }
 
-  /** CPUの手。相手の現在の手は見ない（履歴と盤面のみ）。diff＝'easy'|'normal'|'hard' */
+  // ---------- 最強：均衡（ナッシュ）の勝率表を使って、1手先を読み、混ぜ方（確率）まで最適に近づける ----------
+  // 勝率表 tbl＝{ H, data(Uint8Array) }。tools/sim/make-eq-table.mjs が作る（P1の勝率×255。溜め済みの有無まで）
+  let EQ = null;
+  function setEqTable(tbl) { EQ = tbl || null; }
+  function eqValue(h0, h1, c0, c1) {           // P(0側が勝つ)
+    if (h0 <= 0 && h1 <= 0) return 0.5;
+    if (h0 <= 0) return 0;
+    if (h1 <= 0) return 1;
+    const H = EQ.H;
+    return EQ.data[((Math.min(H, h0) * (H + 1) + Math.min(H, h1)) * 2 + c0) * 2 + c1] / 255;
+  }
+  // 手の組 cmd の結果を、確率つきで全部数え上げる（resolve と同じ規則。乱数は使わない）
+  function enumerate(S, cmd, cfg) {
+    const delta = [0, 0], loaded = [false, false], att = [];
+    for (let i = 0; i < 2; i++) {
+      const j = 1 - i;
+      if (cmd[i] === 'A') {
+        delta[i] -= cfg.attackCost;
+        const dmg = cfg.damage * (S.ch[i] ? cfg.chargeMult : 1);
+        const defending = cmd[j] === 'D';
+        att.push({ i, j, dmg, rate: critRate(S.hp, i, cfg), defending,
+                   sr: defending ? succRate(S.ds[j], cfg) : 0, jr: defending ? jgRate(S.hp, j, cfg, S.ds[j]) : 0,
+                   drain: cfg.drain * (cmd[j] === 'C' ? 2 : 1) });
+      } else if (cmd[i] === 'C') { delta[i] += cfg.heal; loaded[i] = S.hp[i] < cfg.hp; }
+    }
+    let br = [{ p: 1, dl: delta.slice() }];
+    for (const a of att) {
+      const nb = [];
+      for (const b of br) {
+        const blk = a.defending ? [[1 - a.sr, 'fail'], [a.sr * (1 - a.jr), 'block'], [a.sr * a.jr, 'just']] : [[1, 'hit']];
+        for (const [pb, kind] of blk) {
+          if (pb <= 0) continue;
+          const cr = a.rate > 0 ? [[a.rate, true], [1 - a.rate, false]] : [[1, false]];
+          for (const [pc, crit] of cr) {
+            if (pc <= 0) continue;
+            const dl = b.dl.slice();
+            if (kind === 'fail' || kind === 'hit') dl[a.j] -= a.dmg;
+            if (kind === 'just') dl[a.i] -= cfg.reflect;
+            if (crit) { if (kind === 'just') dl[a.i] -= a.drain; else { dl[a.j] -= a.drain; dl[a.i] += a.drain; } }
+            nb.push({ p: b.p * pb * pc, dl });
+          }
+        }
+      }
+      br = nb;
+    }
+    return br.map((b) => {
+      const dl = b.dl;
+      if (cmd[0] === cmd[1] && cfg.mirror) { dl[0] -= cfg.mirror; dl[1] -= cfg.mirror; }
+      return { p: b.p, hp: [Math.min(cfg.hp, S.hp[0] + dl[0]), Math.min(cfg.hp, S.hp[1] + dl[1])],
+               ch: [0, 1].map((k) => (cmd[k] === 'C' && loaded[k]) ? 1 : 0) };
+    });
+  }
+  // 小さな行列ゲームの最適な混ぜ方（行側が最大化）。サポート列挙で解く
+  function gauss(M, b) {
+    const n = b.length, a = M.map((r, i) => r.concat([b[i]]));
+    for (let c = 0; c < n; c++) {
+      let piv = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(a[r][c]) > Math.abs(a[piv][c])) piv = r;
+      if (Math.abs(a[piv][c]) < 1e-12) return null;
+      const t = a[c]; a[c] = a[piv]; a[piv] = t;
+      for (let r = 0; r < n; r++) if (r !== c) { const f = a[r][c] / a[c][c]; for (let k = c; k <= n; k++) a[r][k] -= f * a[c][k]; }
+    }
+    return a.map((r, i) => r[n] / r[i]);
+  }
+  function solveGame(A, nr, nc) {
+    let bestV = -1, bestP = null;
+    const cand = (p) => {
+      let m = 1e9;
+      for (let j = 0; j < nc; j++) { let sum = 0; for (let i = 0; i < nr; i++) sum += p[i] * A[i][j]; if (sum < m) m = sum; }
+      if (m > bestV + 1e-12) { bestV = m; bestP = p.slice(); }
+    };
+    for (let i = 0; i < nr; i++) { const p = new Array(nr).fill(0); p[i] = 1; cand(p); }
+    const sets = [[0, 1], [0, 2], [1, 2], [0, 1, 2]];
+    for (const S of sets.filter((x) => x.every((y) => y < nr))) for (const T of sets.filter((x) => x.every((y) => y < nc))) {
+      if (S.length !== T.length) continue;
+      const k = S.length, M = [new Array(k).fill(1)], rhs = [1];
+      for (let t = 1; t < k; t++) { M.push(S.map((i) => A[i][T[t]] - A[i][T[0]])); rhs.push(0); }
+      const p = gauss(M, rhs);
+      if (!p || p.some((x) => x < -1e-9)) continue;
+      const full = new Array(nr).fill(0); S.forEach((i, n) => { full[i] = Math.max(0, p[n]); });
+      cand(full);
+    }
+    return { v: bestV, p: bestP };
+  }
+  // 最強：勝率表で1手先を読んだ「手ごとの期待勝率」を、(1)相手の癖の予測と(2)相手が均衡で来た場合、の両方に対して求めて混ぜる。
+  // EXPLOIT＝予測をどれだけ信じるか（0＝完全に均衡、1＝予測だけ）。選ぶ手は、混ぜた期待勝率が最大の手（同率なら均衡の混ぜ方）
+  let EXPLOIT = 0.6;
+  function setExploit(x) { EXPLOIT = x; }
+  function cpuMax(S, i, cfg, rnd) {
+    const j = 1 - i, ok = allowed(S.last[i], cfg, S.hp[i]), okOpp = allowed(S.last[j], cfg, S.hp[j]);
+    const A = ok.map((a) => okOpp.map((b) => {
+      const cmd = i === 0 ? [a, b] : [b, a];
+      let v = 0;
+      for (const o of enumerate(S, cmd, cfg)) v += o.p * eqValue(o.hp[0], o.hp[1], o.ch[0], o.ch[1]);
+      return i === 0 ? v : 1 - v;      // CPU側の勝率
+    }));
+    const eq = solveGame(A, ok.length, okOpp.length);
+    const Bt = okOpp.map((_, c) => ok.map((_, r) => 1 - A[r][c]));
+    const q = solveGame(Bt, okOpp.length, ok.length).p;            // 相手の均衡の混ぜ方
+    const model = oppModel(S, j, cfg);
+    const pm = okOpp.map((c) => (model.p[c] || 0));
+    const tot = pm.reduce((x, y) => x + y, 0) || 1;
+    const w = EXPLOIT * Math.min(1, model.n / 4);                   // 観測が少ないうちは予測を信じすぎない
+    const qq = okOpp.map((_, k) => w * pm[k] / tot + (1 - w) * q[k]);
+    const val = ok.map((_, r) => qq.reduce((acc, qk, k) => acc + qk * A[r][k], 0));
+    let best = 0;
+    for (let r = 1; r < ok.length; r++) if (val[r] > val[best] + 1e-9) best = r;
+    // 均衡でも同じくらい良い手があるなら、均衡の混ぜ方で選ぶ（読まれにくくする）
+    const near = ok.map((_, r) => val[r] >= val[best] - 0.004);
+    const pe = eq.p.map((x, r) => near[r] ? x : 0), te = pe.reduce((x, y) => x + y, 0);
+    if (te > 1e-9) { let x = rnd() * te, acc = 0; for (let r = 0; r < ok.length; r++) { acc += pe[r]; if (x < acc) return ok[r]; } }
+    return ok[best];
+  }
+
+  /** CPUの手。相手の現在の手は見ない（履歴と盤面のみ）。diff＝'easy'|'normal'|'hard'|'max' */
   function cpuChoose(S, i, diff, cfg, rnd) {
     rnd = rnd || Math.random;
     const j = 1 - i, ok = allowed(S.last[i], cfg, S.hp[i]);
+    if (diff === 'max' && EQ && EQ.H === cfg.hp) return cpuMax(S, i, cfg, rnd);   // 勝率表が無い間は、つよいと同じ
     if (diff === 'easy') return ok[Math.floor(rnd() * ok.length)];
     const model = oppModel(S, j, cfg);
     if (diff === 'normal') {
@@ -215,7 +330,7 @@
     return best;
   }
 
-  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose };
+  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose, setEqTable, setExploit };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PCB = api;
 })(typeof window !== 'undefined' ? window : globalThis);
