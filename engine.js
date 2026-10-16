@@ -26,16 +26,25 @@
     critK: 0.008,       // HP差1あたりの上昇
     critCap: 0.50,      // 上限
     defStep: 0.25,      // 防御の成功率の低下幅（連続1回あたり）
-    noDefAfterCharge: 0 // 1なら、貯めた次は防御不可（既定は可）
+    noDefAfterCharge: 0, // 1なら、貯めた次は防御不可（既定は可）
+    // ---- 2026-10-16 テスト導入 ----
+    justGuard: 1,       // 1ならジャストガードあり（防御版クリティカル）
+    jgBase: 0.10,       // ジャストガード基本率（クリティカルと同じ式：自分のHPが相手より低いほど上がる）
+    jgK: 0.008,
+    jgCap: 0.50,
+    reflect: 5,         // ジャストガード時、攻撃側に返す反射ダメージ
+    lowChargeRatio: 0.10 // 自分のHPがこの割合（上限比）未満なら、防御の次でも「貯め」を選べる
   };
 
   function makeConfig(patch) { return Object.assign({}, DEFAULTS, patch || {}); }
 
-  function allowed(last, cfg) {
+  // hp＝自分の現在HP（省略可）。防御の次は貯める不可だが、HPが上限の lowChargeRatio 未満なら貯められる
+  function allowed(last, cfg, hp) {
     cfg = cfg || DEFAULTS;
     if (last === null || last === 'A') return ['A', 'C', 'D'];
     if (last === 'C') return cfg.noDefAfterCharge ? ['A', 'C'] : ['A', 'C', 'D'];
-    return ['A', 'D']; // 防御の次は貯める不可
+    if (hp != null && hp < cfg.hp * cfg.lowChargeRatio) return ['A', 'C', 'D'];
+    return ['A', 'D'];
   }
 
   // ds＝直前までの連続防御回数。1回目100%、以後 defStep ずつ低下（0未満にはならない）
@@ -44,6 +53,12 @@
   // 自分(i)のクリティカル率。自分のHPが相手より低いほど上がる
   function critRate(hp, i, cfg) {
     return Math.min(cfg.critCap, cfg.critBase + Math.max(0, hp[1 - i] - hp[i]) * cfg.critK);
+  }
+
+  // 自分(i)のジャストガード率（防御成功時に判定）。自分のHPが相手より低いほど上がる
+  function jgRate(hp, i, cfg) {
+    if (!cfg.justGuard) return 0;
+    return Math.min(cfg.jgCap, cfg.jgBase + Math.max(0, hp[1 - i] - hp[i]) * cfg.jgK);
   }
 
   function newState(cfg) {
@@ -72,21 +87,27 @@
         const dmg = cfg.damage * mult;
         const ev = { t: 'attack', from: i, to: j, cost: cfg.attackCost, dmg, mult,
                      defended: cmd[j] === 'D', blocked: false, defFailed: false, succ: null,
-                     crit: { hit: false, rate: 0, amount: 0 } };
+                     just: { hit: false, rate: 0, reflect: 0 },
+                     crit: { hit: false, rate: 0, amount: 0, reflected: false } };
         if (cmd[j] !== 'D') {
           delta[j] -= dmg;
         } else {
           const sr = succRate(S.ds[j], cfg);
           ev.succ = sr;
-          if (rnd() < sr) ev.blocked = true;
-          else { delta[j] -= dmg; ev.defFailed = true; failed[j] = true; }
+          if (rnd() < sr) {
+            ev.blocked = true;
+            const jr = jgRate(S.hp, j, cfg);
+            ev.just.rate = jr;
+            if (jr > 0 && rnd() < jr) { ev.just.hit = true; ev.just.reflect = cfg.reflect; delta[i] -= cfg.reflect; }
+          } else { delta[j] -= dmg; ev.defFailed = true; failed[j] = true; }
         }
         const rate = critRate(S.hp, i, cfg);
         ev.crit.rate = rate;
         if (rnd() < rate) {
           const dr = cfg.drain * (cmd[j] === 'C' ? 2 : 1);
-          delta[j] -= dr; delta[i] += dr;
           ev.crit.hit = true; ev.crit.amount = dr;
+          if (ev.just.hit) { delta[i] -= dr; ev.crit.reflected = true; }   // ジャストガード：本来受けるクリティカルの分を、攻撃側が受ける（ドレインは起きない）
+          else { delta[j] -= dr; delta[i] += dr; }
         }
         events.push(ev);
       } else if (cmd[i] === 'C') {
@@ -135,7 +156,7 @@
       glob[c] += k >= h.length - 6 ? 2 : 1;
       if (k > 0 && h[k - 1] === last) { cond[c] += 1.5; n++; }
     });
-    const oppOk = allowed(last, cfg);
+    const oppOk = allowed(last, cfg, S.hp[j]);
     const gT = oppOk.reduce((a, c) => a + glob[c], 0), cT = oppOk.reduce((a, c) => a + cond[c], 0);
     const wc = Math.min(0.8, n / (n + 2));
     const p = {};
@@ -146,7 +167,7 @@
   /** CPUの手。相手の現在の手は見ない（履歴と盤面のみ）。diff＝'easy'|'normal'|'hard' */
   function cpuChoose(S, i, diff, cfg, rnd) {
     rnd = rnd || Math.random;
-    const j = 1 - i, ok = allowed(S.last[i], cfg);
+    const j = 1 - i, ok = allowed(S.last[i], cfg, S.hp[i]);
     if (diff === 'easy') return ok[Math.floor(rnd() * ok.length)];
     const model = oppModel(S, j, cfg);
     if (diff === 'normal') {
@@ -193,7 +214,7 @@
     return best;
   }
 
-  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, newState, resolve, apply, cpuChoose };
+  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PCB = api;
 })(typeof window !== 'undefined' ? window : globalThis);

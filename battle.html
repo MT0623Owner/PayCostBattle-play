@@ -211,6 +211,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       <button class="btn" id="btnMenu" type="button">メニューに戻る</button>
     </div>
   </div>
+  <div class="note" style="margin-top:6px">BGM（一部）：魔王魂 様の楽曲を使用しています。</div>
   <div class="note litenote" id="litenote" hidden>軽量モード中：BGMとエフェクト（Effekseer）を読み込まず、画面フラッシュ・集中線・ズームも止めています。重い時の保険です。</div>
 
   <!-- 選択画面 -->
@@ -353,7 +354,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       <ul style="margin:8px 0 0;padding-left:1.2em;font-size:.85rem;line-height:1.6">
         <li>HPがそのままコスト。HP0で負け。毎ラウンド、お互いに同時に選びます。</li>
         <li><b>攻撃</b>：−5を払って10ダメージ。<b>貯める</b>：+5回復、次の攻撃が2倍。<b>防御</b>：相手の攻撃を防ぐ（連続で失敗しやすくなる）。</li>
-        <li>防御の次は貯められません。あいこは両者−2。攻撃は時々クリティカルで、相手から5を奪います。</li>
+        <li>防御の次は貯められません（HPが上限の10％未満なら貯められます）。あいこは両者−2。攻撃は時々クリティカルで、相手から5を奪います。防御が成功すると、時々「ジャストガード」になり、攻撃した側に5を跳ね返します（その攻撃がクリティカルだった時は、奪われるはずだった5も攻撃側が受けます）。HPが相手より低いほど出やすくなります。</li>
       </ul></details></div>
   </div>
 </div>
@@ -393,10 +394,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const FACE = (n) => n > 6 ? 'img/face/SF_Actor1.png' : 'img/face/Actor1.png';                            // 顔グラ（4列×2行、144px）
   const WEAPON = 'img/Weapon/Weapons1.png';                      // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
   const WEAPON_ID = 2;                                           // 1=短剣、2=剣、3=フレイル、4=斧、5=ムチ、6=杖 ／ 7=弓…（MZのweaponImageId）
-  const BATTLEBACKS = ['Grassland', 'Desert', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
+  const BATTLEBACKS = ['Clouds', 'Cobblestones4', 'Cyberspace', 'Desert', 'Grassland', 'Lava2', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
   const SE = { attack: 'audio/se/Attack3.ogg', damage: 'audio/se/Damage2.ogg', guard: 'audio/se/Reflection.ogg',
                charge: 'audio/se/Powerup.ogg', drain: 'audio/se/Absorb2.ogg',
-               sword: 'audio/se/Sword1.ogg', blow: 'audio/se/Blow1.ogg', dash: 'audio/se/Evasion2.ogg' };
+               sword: 'audio/se/Sword1.ogg', blow: 'audio/se/Blow1.ogg', dash: 'audio/se/Evasion2.ogg', just: 'audio/se/Skill3.ogg' };
   const BGM = 'audio/bgm/03_Endless_Battle.ogg';
   const ME = { win: 'audio/me/Victory2.ogg', lose: 'audio/me/Defeat1.ogg', draw: 'audio/me/Gag.ogg' };
 
@@ -404,7 +405,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   // 公開ページでは、画像・音声を1つのパックにまとめて置く（リポジトリに元の画像・音声ファイルを置かないため）。
   // 画面に出すだけで、元ファイルの形では置かない。パックは読み込み時にこの中で展開する。
   const PACK_KEY = new TextEncoder().encode('PayCostBattle-pack-v1');
-  const MIME = { png: 'image/png', ogg: 'audio/ogg', js: 'text/javascript', wasm: 'application/wasm', efkefc: 'application/octet-stream' };
+  const MIME = { png: 'image/png', ogg: 'audio/ogg', mp3: 'audio/mpeg', js: 'text/javascript', wasm: 'application/wasm', efkefc: 'application/octet-stream' };
   // 4バイトずつXOR（キー21バイト×4＝84バイト＝21ワードの繰り返し）。1バイトずつ回すより速い
   function xorPack(u8) {
     const n = u8.length, words = n >> 2, L = PACK_KEY.length;
@@ -475,7 +476,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---- BGM：OGGのループタグ（LOOPSTART／LOOPLENGTH。ツクールMZの形式）を読んで、ループ位置を守って繰り返す ----
   // Web Audio で曲を丸ごと展開して、loopStart／loopEnd を指定して再生する。展開すると数十MBのメモリを使うので、軽量モードでは使わない。
-  const BGM_LIST = /*BGM_LIST*/ [{"key":"audio/bgm/03_Endless_Battle.ogg","pack":"bgm-03_Endless_Battle.pack","size":4630395},{"key":"audio/bgm/Battle3_MZ.ogg","pack":"bgm-Battle3_MZ.pack","size":745670},{"key":"audio/bgm/Battledarkfnt3_MVT.ogg","pack":"bgm-Battledarkfnt3_MVT.pack","size":791018}];
+  const BGM_LIST = /*BGM_LIST*/ [{"key":"audio/bgm/03_Endless_Battle.ogg","pack":"bgm-03_Endless_Battle.pack","size":4630395},{"key":"audio/bgm/Battle3_MZ.ogg","pack":"bgm-Battle3_MZ.pack","size":745670},{"key":"audio/bgm/Battledarkfnt3_MVT.ogg","pack":"bgm-Battledarkfnt3_MVT.pack","size":791018},{"key":"audio/bgm/maou_game_battle01.mp3","pack":"bgm-maou_game_battle01.pack","size":1508123},{"key":"audio/bgm/maou_game_battle37.mp3","pack":"bgm-maou_game_battle37.pack","size":984003},{"key":"audio/bgm/maou_game_boss08.mp3","pack":"bgm-maou_game_boss08.pack","size":1080551}];
   let actx = null, bgmGain = null, bgmSrc = null, bgmData = null, bgmOn = false, bgmToken = 0;
   function audioCtx() {
     if (!actx) {
@@ -980,7 +981,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     return 'コストなし／相手の攻撃を防ぐ（連続で失敗しやすい）';
   }
   function cmdGroup(i, onPick, selected) {
-    const ok = PCB.allowed(state.last[i], cfg);
+    const ok = PCB.allowed(state.last[i], cfg, state.hp[i]);
     const g = document.createElement('div'); g.className = 'cmds';
     ['A', 'C', 'D'].forEach((c) => {
       const b = document.createElement('button');
@@ -1045,6 +1046,17 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         popText(ev.to, 'ガード！', 'def');
         bigText('GUARD!', 'guard'); screenFlash('#bfe0ff', 300);
         say(`${nameOf(ev.to)}は攻撃を防いだ！`);
+        if (ev.just && ev.just.hit) {
+          // ジャストガード：反射ダメージ
+          await sleep(220);
+          bigText('JUST GUARD!', 'crit'); screenFlash('#ffffff', 420); zoomPunch(200);
+          playSE(SE.just, 0.9); playSE(SE.blow, 0.85);
+          a.setMotion('damage', false); flash(ev.from); shake();
+          pop(ev.from, `−${ev.just.reflect}`, 'drain', 10, 20);
+          view.hp[ev.from] -= ev.just.reflect; renderStatus();
+          say(`ジャストガード！ ${nameOf(ev.from)}に${ev.just.reflect}を跳ね返した！`);
+          await sleep(480);
+        }
       } else {
         t.setMotion('damage', false);
         // 本物のEffekseerが使えればそれを、無ければCSSの斬撃を出す
@@ -1063,11 +1075,19 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         screenFlash('#fff3b0', 560); burst(ev.to); zoomPunch(); bigText('CRITICAL!', 'crit');
         shake(); if (!lite) setTimeout(shake, 150 * speed);
         playSE(SE.drain, 0.9); playSE(SE.blow, 0.9);
+        if (ev.crit.reflected) {
+          // ジャストガードとクリティカルが重なった：奪われるはずだった分を、攻撃側が受ける
+          flash(ev.from);
+          pop(ev.from, `−${ev.crit.amount}`, 'drain', 10, 20);
+          say(`クリティカルを見切った！ ${nameOf(ev.from)}が${ev.crit.amount}を受けた！`);
+          view.hp[ev.from] -= ev.crit.amount; renderStatus();
+        } else {
         drainFx(ev.to, ev.from); flash(ev.to);
         pop(ev.to, `−${ev.crit.amount}`, 'drain', 10, 20);
         setTimeout(() => pop(ev.from, `+${ev.crit.amount}`, 'heal', 0), 480 * speed);
         say(`クリティカル！ ${nameOf(ev.from)}は${nameOf(ev.to)}から${ev.crit.amount}を奪った！`);
         view.hp[ev.to] -= ev.crit.amount; view.hp[ev.from] += ev.crit.amount; renderStatus();
+        }
         await sleep(620);                                         // 見せ場の間
       }
       await sleep(520);
@@ -1627,7 +1647,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         const c = rm.cfg;
         const cmds = [0, 1].map((i) => {
           const ok = commitHash(rm.reveals[i].cmd, rm.reveals[i].nonce, round, code) === rm.commits[i];
-          const al = PCB.allowed(rm.state.last[i], c);
+          const al = PCB.allowed(rm.state.last[i], c, rm.state.hp[i]);
           return (ok && al.includes(rm.reveals[i].cmd)) ? rm.reveals[i].cmd : al[0];   // 不正な手は、選べる最初の手にする
         });
         const S = Object.assign({}, rm.state, { hist: [[], []] });
