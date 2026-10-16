@@ -397,7 +397,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const BATTLEBACKS = ['Clouds', 'Cobblestones4', 'Cyberspace', 'Desert', 'Grassland', 'Lava2', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
   const SE = { attack: 'audio/se/Attack3.ogg', damage: 'audio/se/Damage2.ogg', guard: 'audio/se/Reflection.ogg',
                charge: 'audio/se/Powerup.ogg', drain: 'audio/se/Absorb2.ogg',
-               sword: 'audio/se/Sword1.ogg', blow: 'audio/se/Blow1.ogg', dash: 'audio/se/Evasion2.ogg', just: 'audio/se/Skill3.ogg' };
+               sword: 'audio/se/Sword1.ogg', blow: 'audio/se/Blow1.ogg', dash: 'audio/se/Evasion2.ogg', just: 'audio/se/Reflection.ogg', crit: 'audio/se/Skill3.ogg' };
   const BGM = 'audio/bgm/03_Endless_Battle.ogg';
   const ME = { win: 'audio/me/Victory2.ogg', lose: 'audio/me/Defeat1.ogg', draw: 'audio/me/Gag.ogg' };
 
@@ -1074,7 +1074,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         // クリティカルは見せ場：画面フラッシュ・集中線・大きな文字・ズーム・もう一度の揺れ・ドレインの光
         screenFlash('#fff3b0', 560); burst(ev.to); zoomPunch(); bigText('CRITICAL!', 'crit');
         shake(); if (!lite) setTimeout(shake, 150 * speed);
-        playSE(SE.drain, 0.9); playSE(SE.blow, 0.9);
+        playSE(SE.crit, 0.9); playSE(SE.blow, 0.9);
         if (ev.crit.reflected) {
           // ジャストガードとクリティカルが重なった：奪われるはずだった分を、攻撃側が受ける
           flash(ev.from);
