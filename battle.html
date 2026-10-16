@@ -360,6 +360,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
 <script src="engine.js"></script>
 <script src="firebase-config.js"></script>
+
 <script>
 (() => {
   'use strict';
@@ -461,10 +462,16 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- 音 ----------
   let muted = false;
+  const seLive = new Set();           // 鳴っている効果音（メニューに戻る時に止める）
   function playSE(src, vol = 0.8) {
     if (muted) return;
-    try { const a = new Audio(AS(src)); a.volume = vol; a.play().catch(() => {}); } catch (e) { /* 無視 */ }
+    try {
+      const a = new Audio(AS(src)); a.volume = vol;
+      seLive.add(a); a.addEventListener('ended', () => seLive.delete(a));
+      a.play().catch(() => { seLive.delete(a); });
+    } catch (e) { /* 無視 */ }
   }
+  function stopAllSE() { seLive.forEach((a) => { try { a.pause(); } catch (e) { /* 無視 */ } }); seLive.clear(); }
 
   // ---- BGM：OGGのループタグ（LOOPSTART／LOOPLENGTH。ツクールMZの形式）を読んで、ループ位置を守って繰り返す ----
   // Web Audio で曲を丸ごと展開して、loopStart／loopEnd を指定して再生する。展開すると数十MBのメモリを使うので、軽量モードでは使わない。
@@ -840,7 +847,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
 
   // ---------- 演出ユーティリティ ----------
-  const sleep = (ms) => new Promise((res) => setTimeout(res, skip ? Math.min(40, ms * speed) : ms * speed));
+  // 演出の世代。メニューに戻る・新しいバトルを始めると進むので、前の演出の続きはそこで打ち切られる
+  let epoch = 0;
+  const ABORT = { aborted: true };
+  const sleep = (ms) => { const e = epoch; return new Promise((res, rej) => setTimeout(() => (e === epoch ? res() : rej(ABORT)), skip ? Math.min(40, ms * speed) : ms * speed)); };
   const fx = $('#fx');
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -1095,9 +1105,24 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     const r = PCB.resolve(state, cmd, Math.random, cfg);
     await presentRound(cmd, r, null);
   }
+  // 進行中の演出・効果音・表示をすべて止める（メニューに戻る時／新しいバトルの前）
+  function abortPresentation() {
+    epoch++;
+    stopAllSE();
+    busy = false; skip = false; view = null;
+    try { hideTags(); } catch (e) { /* 無視 */ }
+    $('#banner').classList.remove('on');
+    $('#fade').classList.remove('on');
+    say('');
+    document.querySelectorAll('.pop, .slash, .ring, .dot, .bigtext, .flashfx, .burst').forEach((el) => el.remove());
+    stage.style.scale = '1';
+  }
 
   // 1ラウンドの結果(r)を演出する。finalState があれば、演出後にそれを状態にする（オンライン）。無ければ r を適用する。
   async function presentRound(cmd, r, finalState) {
+    try { await presentRound0(cmd, r, finalState); } catch (e) { if (e !== ABORT) throw e; }
+  }
+  async function presentRound0(cmd, r, finalState) {
     if (busy) return;
     busy = true; skip = false; renderCommands();
     view = { hp: state.hp.slice() };
@@ -1135,7 +1160,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     } else {
       const w = res, l = 1 - res;
       B[l].setMotion('dying', false);
-      setTimeout(() => B[l].setMotion('dead', false), 700 * speed);
+      { const e0 = epoch; setTimeout(() => { if (e0 === epoch) B[l].setMotion('dead', false); }, 700 * speed); }
       B[w].setMotion('victory', true);
       if (mode === 'cpu' || mode === 'online') { text = w === 0 ? 'WIN!' : 'LOSE…'; cls = w === 0 ? 'win' : 'lose'; playMEwin(w === 0); }
       else { text = `${nameOf(w)}の勝ち！`; cls = 'win'; playMEwin(true); }
@@ -1162,6 +1187,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     }
   }
   function startBattle() {
+    abortPresentation();
     refreshSelect();
     applyRules();
     // CPU戦：CPUのキャラは、ランダム指定ならバトルごとに変える（自分と同じキャラにはならない）
@@ -1203,7 +1229,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     transition(() => { startBattle(); $('#startOverlay').style.display = 'none'; }, 'NEXT BATTLE');
   });
   $('#btnMenu').addEventListener('click', () => {
-    stopBGM(); busy = false;
+    stopBGM(); abortPresentation();
     if (mode === 'online') onlineBackToEntry();
     $('#battle').hidden = true; $('#battle').style.display = 'none';
     $('#select').style.display = 'grid';
@@ -1537,6 +1563,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ----- 戦闘の進行 -----
   function startOnlineBattle(room) {
+    abortPresentation();
     ONLINE.started = true; ONLINE.myPick = null; ONLINE.resolving = false;
     Object.assign(cfg, room.cfg);
     const me = ONLINE.seat === 0 ? room.host : room.guest, op = ONLINE.seat === 0 ? room.guest : room.host;
