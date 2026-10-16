@@ -9,7 +9,7 @@
  *   PCB.apply(S, ['A','D'], r);                 // 結果を状態に反映
  *   PCB.cpuChoose(S, 1, 'normal', cfg);         // CPUの手
  *
- * コマンド：'A'=攻撃、'C'=貯める、'D'=防御
+ * コマンド：'A'=攻撃、'C'=溜める、'D'=防御
  */
 (function (root) {
   'use strict';
@@ -18,15 +18,15 @@
     hp: 100,            // 初期HP・上限
     attackCost: 5,      // 攻撃のコスト
     damage: 10,         // 攻撃ダメージ
-    heal: 5,            // 貯めるの回復量
-    chargeMult: 2,      // 貯め後の攻撃倍率
+    heal: 5,            // 溜めるの回復量
+    chargeMult: 2,      // 溜め後の攻撃倍率
     drain: 5,           // クリティカルのドレイン量
     mirror: 2,          // あいこ（同じ手）のペナルティ
     critBase: 0.10,     // クリティカル基本率
     critK: 0.008,       // HP差1あたりの上昇
     critCap: 0.50,      // 上限
     defStep: 0.25,      // 防御の成功率の低下幅（連続1回あたり）
-    noDefAfterCharge: 0, // 1なら、貯めた次は防御不可（既定は可）
+    noDefAfterCharge: 0, // 1なら、溜めた次は防御不可（既定は可）
     // ---- 2026-10-16 テスト導入 ----
     justGuard: 1,       // 1ならジャストガードあり（防御版クリティカル）
     jgBase: 0.10,       // ジャストガード基本率（クリティカルと同じ式：自分のHPが相手より低いほど上がる）
@@ -34,12 +34,12 @@
     jgCap: 0.50,
     jgStep: 0,          // 連続で防御に成功した回数1回あたり、ジャストガード率に足す分（0＝足さない）
     reflect: 5,        // ジャストガード時、攻撃側に返す反射ダメージ
-    lowChargeRatio: 0.10 // 自分のHPがこの割合（上限比）未満なら、防御の次でも「貯め」を選べる
+    lowChargeRatio: 0.10 // 自分のHPがこの割合（上限比）未満なら、防御の次でも「溜め」を選べる
   };
 
   function makeConfig(patch) { return Object.assign({}, DEFAULTS, patch || {}); }
 
-  // hp＝自分の現在HP（省略可）。防御の次は貯める不可だが、HPが上限の lowChargeRatio 未満なら貯められる
+  // hp＝自分の現在HP（省略可）。防御の次は溜める不可だが、HPが上限の lowChargeRatio 未満なら溜められる
   function allowed(last, cfg, hp) {
     cfg = cfg || DEFAULTS;
     if (last === null || last === 'A') return ['A', 'C', 'D'];

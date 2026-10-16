@@ -380,8 +380,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     <div class="window" style="padding:8px 12px"><details><summary style="cursor:pointer">あそびかた</summary>
       <ul style="margin:8px 0 0;padding-left:1.2em;font-size:.85rem;line-height:1.6">
         <li>HPがそのままコスト。HP0で負け。毎ラウンド、お互いに同時に選びます。</li>
-        <li><b>攻撃</b>：−5を払って10ダメージ。<b>貯める</b>：+5回復、次の攻撃が2倍。<b>防御</b>：相手の攻撃を防ぐ（連続で失敗しやすくなる）。</li>
-        <li>防御の次は貯められません（HPが上限の10％未満なら貯められます）。あいこは両者−2。攻撃は時々クリティカルで、相手から5を奪います。防御が成功すると、時々「ジャストガード」になり、攻撃した側に5を跳ね返します（その攻撃がクリティカルだった時は、奪われるはずだった5も攻撃側が受けます）。HPが相手より低いほど出やすくなります。</li>
+        <li><b>攻撃</b>：−5を払って10ダメージ。<b>溜める</b>：+5回復、次の攻撃が2倍。<b>防御</b>：相手の攻撃を防ぐ（連続で失敗しやすくなる）。</li>
+        <li>防御の次は溜められません（HPが上限の10％未満なら溜められます）。あいこは両者−2。攻撃は時々クリティカルで、相手から5を奪います。防御が成功すると、時々「ジャストガード」になり、攻撃した側に5を跳ね返します（その攻撃がクリティカルだった時は、奪われるはずだった5も攻撃側が受けます）。HPが相手より低いほど出やすくなります。</li>
       </ul></details></div>
   </div>
 </div>
@@ -392,7 +392,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 (() => {
   'use strict';
   const $ = (s) => document.querySelector(s);
-  const NAMES = { A: '攻撃', C: '貯める', D: '防御' };
+  const NAMES = { A: '攻撃', C: '溜める', D: '防御' };
 
   // ---------- 素材 ----------
   // 素材は「キー（src/ からの相対パス）」で持つ。AS(キー) が、素材パックから読み込んだ画像・音声のURLか、開発時の ./src/ のパスを返す。
@@ -750,7 +750,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const MODEL_URLS = new Set();   // 3Dモデルのblob URL（画像として読まないための目印）
   const FX_SCALE = 1.0;     // 読み込み時の倍率（等倍のまま。大きさは下の FXSCALE で再生時に決める）
   // 再生時の大きさ（1ユニット＝約1.0pxだと、MZのエフェクトは十数pxにしかならない。実測で、画面上で
-  // 斬撃≒200px・命中≒170px・貯め≒160px幅になる倍率にしてある。大きすぎ・小さすぎなら、ここを調整する）
+  // 斬撃≒200px・命中≒170px・溜め≒160px幅になる倍率にしてある。大きすぎ・小さすぎなら、ここを調整する）
   const FXSCALE = { slash: 12, hit: 8, power: 14, heal: 9 };
   const EFX = { ready: false, ctx: null, gl: null, canvas: null, effects: {}, handles: new Set(), raf: 0, last: 0, tex: {}, missing: [] };
 
@@ -988,7 +988,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     const hp = viewHp(i);
     const low = hp <= cfg.hp * 0.25;
     const chips = [];
-    if (state.ch[i]) chips.push(`<span class="chip on">◆貯め済み×${cfg.chargeMult}</span>`);
+    if (state.ch[i]) chips.push(`<span class="chip on">◆溜め済み×${cfg.chargeMult}</span>`);
     if (state.ds[i] > 0) chips.push(`<span class="chip">防御連続${state.ds[i]}</span>`);
     const d = hpDelta[i] ? `<span class="dl ${hpDelta[i] > 0 ? 'up' : 'dn'}">${hpDelta[i] > 0 ? '▲+' : '▼'}${hpDelta[i]}</span>` : '';
     return `<div class="nm"><span>${nameOf(i)}</span><small>${charLabel(chars[i])}</small></div>
@@ -1021,7 +1021,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   function info(c, i) {
     if (c === 'A') {
       const m = state.ch[i] ? cfg.chargeMult : 1;
-      return `コスト−${cfg.attackCost}／${cfg.damage * m}ダメージ${m > 1 ? '（貯め後）' : ''}`;
+      return `コスト−${cfg.attackCost}／${cfg.damage * m}ダメージ${m > 1 ? '（溜め後）' : ''}`;
     }
     if (c === 'C') return `+${cfg.heal}回復／次の攻撃${cfg.chargeMult}倍`;
     return 'コストなし／相手の攻撃を防ぐ（連続で失敗しやすい）';
@@ -1033,7 +1033,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const b = document.createElement('button');
       b.type = 'button'; b.className = `cmd ${c}${selected === c ? ' sel' : ''}`;
       b.disabled = busy || state.over || !ok.includes(c);
-      const reason = !ok.includes(c) ? (c === 'D' ? '貯めた次は防御できない' : '防御した次は貯められない') : info(c, i);
+      const reason = !ok.includes(c) ? (c === 'D' ? '溜めた次は防御できない' : '防御した次は溜められない') : info(c, i);
       b.innerHTML = `<span class="name">${NAMES[c]}</span><span class="info">${reason}</span>`;
       b.addEventListener('click', () => { b.blur(); onPick(c); });   // フォーカスを外す（次の人の画面に、選択の見た目が残らないように）
       g.appendChild(b);
@@ -1078,12 +1078,12 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const a = B[ev.from], t = B[ev.to];
       const dir = ev.from === 0 ? 1 : -1;                       // 左側（自分）は右へ、右側（相手）は左へ
       const dist = Math.abs((t.base.x + t.dx) - (a.base.x + a.dx)) - 150;
-      say(`${nameOf(ev.from)}の攻撃！${ev.mult > 1 ? '（貯め後）' : ''}`);
+      say(`${nameOf(ev.from)}の攻撃！${ev.mult > 1 ? '（溜め後）' : ''}`);
       pop(ev.from, `−${ev.cost}`, 'cost', 20);
       view.hp[ev.from] -= ev.cost; renderStatus();
       a.setMotion('walk', true); a.move(dir * dist); playSE(SE.dash, 0.7);
       await sleep(360);
-      a.setMotion('swing', false); playSE(SE.attack, ev.mult > 1 ? 0.95 : 0.75);   // 貯め後は大きめに
+      a.setMotion('swing', false); playSE(SE.attack, ev.mult > 1 ? 0.95 : 0.75);   // 溜め後は大きめに
       await sleep(300);
       if (ev.blocked) {
         t.setMotion('guard', false); ring(ev.to); playSE(SE.guard, 0.8);
@@ -1143,7 +1143,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       a.idle(); t.idle();
     } else if (ev.t === 'charge') {
       const b = B[ev.who];
-      say(`${nameOf(ev.who)}は力を貯めた！`);
+      say(`${nameOf(ev.who)}は力を溜めた！`);
       b.setMotion('chant', true); playSE(SE.charge, 0.8);
       playFX('power', ev.who, { dy: -70 });                      // 足元から立ち上るので、キャラの足元に置く
       if (ev.loaded) bigText('CHARGE!', 'charge');
@@ -1193,10 +1193,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   let LOGS = [];
   try { LOGS = JSON.parse(localStorage.getItem(LOG_KEY) || '[]') || []; } catch (e) { LOGS = []; }
   let curLog = null;
-  const NAMES_CMD = { A: '攻撃', C: '貯め', D: '防御' };
+  const NAMES_CMD = { A: '攻撃', C: '溜め', D: '防御' };
   function logSave() { try { localStorage.setItem(LOG_KEY, JSON.stringify(LOGS.slice(-LOG_MAX))); } catch (e) { /* 容量不足などは無視 */ } }
   function logStart() {
-    const rules = { hp: cfg.hp, crit: (cfg.critBase > 0 || cfg.critK > 0) ? 1 : 0, justGuard: cfg.justGuard ? 1 : 0, jgStep: cfg.jgStep || 0, jgCap: cfg.jgCap, reflect: cfg.reflect };
+    const rules = { hp: cfg.hp, crit: (cfg.critBase > 0 || cfg.critK > 0) ? 1 : 0, justGuard: cfg.justGuard ? 1 : 0, jgStep: cfg.jgStep || 0, jgCap: cfg.jgCap, reflect: cfg.reflect, cpu: mode === 'cpu' ? diff : '' };
     curLog = { id: Date.now().toString(36), t: new Date().toISOString(), mode, rules,
                names: [nameOf(0), nameOf(1)], chars: [charLabel(chars[0]) || ('CPU' + chars[0]), charLabel(chars[1]) || ('CPU' + chars[1])],
                rounds: [], result: null };
@@ -1210,7 +1210,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       if (ev.crit && ev.crit.hit) x += ev.crit.reflected ? '＋クリ見切り(攻撃側−' + ev.crit.amount + ')' : '＋クリ(吸収' + ev.crit.amount + ')';
       return x;
     }
-    if (ev.t === 'charge') return nm[ev.who] + '貯め' + (ev.loaded ? '' : '(上限)');
+    if (ev.t === 'charge') return nm[ev.who] + '溜め' + (ev.loaded ? '' : '(上限)');
     if (ev.t === 'mirror') return 'あいこ−' + ev.amount;
     return '';
   }
@@ -1251,9 +1251,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   $('#logJson').addEventListener('click', () => logDownload('pcb-log.json', JSON.stringify(LOGS, null, 1), 'application/json'));
   $('#logCsv').addEventListener('click', () => {
     const q = (v) => '"' + String(v).split('"').join('""') + '"';
-    const head = ['match', 'time', 'mode', 'P1', 'P2', 'result', 'hp', 'justGuard', 'jgStep', 'round', 'cmd1', 'cmd2', 'hp1_before', 'hp2_before', 'hp1_after', 'hp2_after', 'events'];
+    const head = ['match', 'time', 'mode', 'P1', 'P2', 'result', 'hp', 'justGuard', 'jgStep', 'jgCap', 'cpu', 'round', 'cmd1', 'cmd2', 'hp1_before', 'hp2_before', 'hp1_after', 'hp2_after', 'events'];
     const lines = [head.join(',')];
-    LOGS.forEach((m) => m.rounds.forEach((r) => lines.push([m.id, m.t, m.mode, m.chars[0], m.chars[1], m.result || '', (m.rules || {}).hp, (m.rules || {}).justGuard, (m.rules || {}).jgStep, r.n, r.cmd[0], r.cmd[1], r.before[0], r.before[1], r.after[0], r.after[1], r.ev].map(q).join(','))));
+    LOGS.forEach((m) => m.rounds.forEach((r) => lines.push([m.id, m.t, m.mode, m.chars[0], m.chars[1], m.result || '', (m.rules || {}).hp, (m.rules || {}).justGuard, (m.rules || {}).jgStep, (m.rules || {}).jgCap, (m.rules || {}).cpu, r.n, r.cmd[0], r.cmd[1], r.before[0], r.before[1], r.after[0], r.after[1], r.ev].map(q).join(','))));
     logDownload('pcb-log.csv', '\uFEFF' + lines.join('\r\n'), 'text/csv');
   });
   $('#logClear').addEventListener('click', () => { if (confirm('保存されている対戦ログを、すべて消します。よろしいですか？')) { LOGS = []; curLog = null; logSave(); logRender(); } });
@@ -1271,7 +1271,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     say('せーの！');
     await sleep(900);
     hideTags();
-    // 防御・貯めの待機モーションなど、同時に走るものは事前に状態を整える
+    // 防御・溜めの待機モーションなど、同時に走るものは事前に状態を整える
     for (const ev of r.events) await playEvent(ev);
     // 結果を反映
     view = null;

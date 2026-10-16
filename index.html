@@ -144,9 +144,9 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
       <li>HPがそのまま「コスト」。HPが0になった方の負けです。</li>
       <li>毎ラウンド、お互いに同時に1つ選びます。</li>
       <li><b>攻撃</b>：コスト−5を払って、相手に10ダメージ。</li>
-      <li><b>貯める</b>：HPが+5。次の攻撃が2倍になります（実際に回復できた時だけ）。</li>
+      <li><b>溜める</b>：HPが+5。次の攻撃が2倍になります（実際に回復できた時だけ）。</li>
       <li><b>防御</b>：コストなしで相手の攻撃を防ぎます。ただし連続で使うほど失敗しやすくなり、続けると必ず失敗します。失敗すると通常どおりダメージを受けます。</li>
-      <li>防御の次は「貯める」を選べません。一度攻撃を挟みます。</li>
+      <li>防御の次は「溜める」を選べません。一度攻撃を挟みます。</li>
       <li>お互いに同じ手を出すと（あいこ）、両者−2です。</li>
       <li>攻撃は時々クリティカルになります。ダメージに加えて、相手から5を奪います。HPが相手より低いほど出やすくなります。</li>
     </ul>
@@ -189,16 +189,16 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
     short: { patch: { hp: 100, damage: 10, mirror: 2, critBase: 0.10, critK: 0.008, critCap: 0.50, defStep: 0.25, defGrace: 1, failDrainUnit: 5, failDrainCap: 25, noDefAfterCharge: 1, classic: 0, failCrit: 1 } }
   };
   const LABELS = {
-    hp: ['初期HP・上限', 1], attackCost: ['攻撃のコスト', 1], damage: ['攻撃ダメージ', 1], heal: ['貯めるの回復量', 1],
+    hp: ['初期HP・上限', 1], attackCost: ['攻撃のコスト', 1], damage: ['攻撃ダメージ', 1], heal: ['溜めるの回復量', 1],
     drain: ['ドレイン量（通常）', 1], mirror: ['同じ手のペナルティ', 1], critBase: ['クリティカル基本率', 0.01],
     critK: ['HP差1あたりの上昇', 0.001], critCap: ['クリティカル率の上限', 0.01], defStep: ['防御の成功率低下／回', 0.01],
     defGrace: ['防御が100％で通る連続回数', 1],
-    failDrainUnit: ['防御失敗ドレイン（×連続数）', 1], failDrainCap: ['防御失敗ドレイン上限', 1], chargeMult: ['貯め後の攻撃倍率', 1],
-    noDefAfterCharge: ['貯めた次は防御不可（1＝不可）', 1], classic: ['先攻順で処理・クリティカル系なし（1＝初期版）', 1],
+    failDrainUnit: ['防御失敗ドレイン（×連続数）', 1], failDrainCap: ['防御失敗ドレイン上限', 1], chargeMult: ['溜め後の攻撃倍率', 1],
+    noDefAfterCharge: ['溜めた次は防御不可（1＝不可）', 1], classic: ['先攻順で処理・クリティカル系なし（1＝初期版）', 1],
     failCrit: ['防御失敗時に確定クリティカル（1＝あり）', 1]
   };
   let cfg = { ...DEF };
-  const NAMES = { A: '攻撃', C: '貯める', D: '防御' };
+  const NAMES = { A: '攻撃', C: '溜める', D: '防御' };
   const CLS = { A: 'atk', C: 'chg', D: 'def' };
   const $ = s => document.querySelector(s);
   const pct = x => Math.round(x * 100) + '%';
@@ -239,13 +239,13 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
         const mult = S.ch[i] ? cfg.chargeMult : 1, dmg = cfg.damage * mult;
         if (cmd[j] !== 'D') {
           hp[j] -= dmg;
-          if (n) L.push(`${n[i]}の攻撃が${n[j]}に${dmg}ダメージ${mult > 1 ? '（貯め後の倍率）' : ''}。${n[i]}はコスト−${cfg.attackCost}`);
+          if (n) L.push(`${n[i]}の攻撃が${n[j]}に${dmg}ダメージ${mult > 1 ? '（溜め後の倍率）' : ''}。${n[i]}はコスト−${cfg.attackCost}`);
         } else if (n) L.push(`${n[j]}の防御で${n[i]}の攻撃は無効。${n[i]}はコスト−${cfg.attackCost}`);
       } else if (cmd[i] === 'C') {
         const before = hp[i];
         hp[i] = Math.min(cfg.hp, hp[i] + cfg.heal);
         if (hp[i] > before) loaded[i] = true;
-        if (n) L.push(`${n[i]}は貯めて+${hp[i] - before}${hp[i] > before ? '（次の攻撃が' + cfg.chargeMult + '倍）' : '（HP上限で回復なし・倍率は付かない）'}`);
+        if (n) L.push(`${n[i]}は溜めて+${hp[i] - before}${hp[i] > before ? '（次の攻撃が' + cfg.chargeMult + '倍）' : '（HP上限で回復なし・倍率は付かない）'}`);
       } else if (n && cmd[j] !== 'A') {
         L.push(`${n[i]}は防御（何も起きず）`);
       }
@@ -268,7 +268,7 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
         let forceCrit = false, failDrain = 0;
         if (cmd[j] !== 'D') {
           delta[j] -= dmg;
-          if (n) L.push(`${n[i]}の攻撃が${n[j]}に${dmg}ダメージ${mult > 1 ? '（貯め後の倍率）' : ''}。${n[i]}はコスト−${cfg.attackCost}`);
+          if (n) L.push(`${n[i]}の攻撃が${n[j]}に${dmg}ダメージ${mult > 1 ? '（溜め後の倍率）' : ''}。${n[i]}はコスト−${cfg.attackCost}`);
         } else {
           const sr = succRate(S.ds[j]);
           if (rnd() < sr) {
@@ -287,12 +287,12 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
         if (forceCrit || rolled) {
           const dr = failDrain || cfg.drain * (cmd[j] === 'C' ? 2 : 1);
           delta[j] -= dr; delta[i] += dr;
-          if (n) L.push(`クリティカル${forceCrit ? '（防御失敗）' : ''}：${n[i]}が${n[j]}から${dr}ドレイン${cmd[j] === 'C' && !forceCrit ? '（貯め中なので2倍）' : ''}`);
+          if (n) L.push(`クリティカル${forceCrit ? '（防御失敗）' : ''}：${n[i]}が${n[j]}から${dr}ドレイン${cmd[j] === 'C' && !forceCrit ? '（溜め中なので2倍）' : ''}`);
         }
       } else if (cmd[i] === 'C') {
         delta[i] += cfg.heal;
         if (S.hp[i] < cfg.hp) loaded[i] = true;
-        if (n) L.push(`${n[i]}は貯めて+${cfg.heal}${S.hp[i] >= cfg.hp ? '（HP上限で回復なし・倍率は付かない）' : '（次の攻撃が' + cfg.chargeMult + '倍）'}`);
+        if (n) L.push(`${n[i]}は溜めて+${cfg.heal}${S.hp[i] >= cfg.hp ? '（HP上限で回復なし・倍率は付かない）' : '（次の攻撃が' + cfg.chargeMult + '倍）'}`);
       } else if (n && cmd[j] !== 'A') {
         L.push(`${n[i]}は防御（何も起きず）`);
       }
@@ -401,7 +401,7 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
     if (c === 'A') {
       const m = S.ch[i] ? cfg.chargeMult : 1;
       const crit = '';
-      return `コスト−${cfg.attackCost}／ダメージ${cfg.damage * m}${m > 1 ? '（貯め後）' : ''}${crit}`;
+      return `コスト−${cfg.attackCost}／ダメージ${cfg.damage * m}${m > 1 ? '（溜め後）' : ''}${crit}`;
     }
     if (c === 'C') return `+${cfg.heal}回復／次の攻撃${cfg.chargeMult}倍${S.hp[i] >= cfg.hp ? '（HP上限なので倍率なし）' : ''}`;
     if (!(cfg.defStep > 0)) return 'コストなし／攻撃を完全に防ぐ';
@@ -417,7 +417,7 @@ details.howto ul { margin: 10px 0 0; padding-left: 1.2em; display: grid; gap: 4p
       b.className = `cmd ${CLS[c]}${selected === c ? ' sel' : ''}`;
       const allow = ok.includes(c) && !S.over;
       b.disabled = !allow;
-      const reason = !ok.includes(c) ? (c === 'D' ? '貯めた次は防御できない' : '防御した次は貯められない') : '';
+      const reason = !ok.includes(c) ? (c === 'D' ? '溜めた次は防御できない' : '防御した次は溜められない') : '';
       b.innerHTML = `<span class="name">${NAMES[c]}</span><span class="info">${reason || cmdInfo(c, i)}</span>`;
       b.addEventListener('click', () => onPick(c));
       wrap.appendChild(b);
