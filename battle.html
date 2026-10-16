@@ -388,14 +388,16 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   } catch (e) { /* 無視 */ }
   window.PCB_ASSETS = window.PCB_ASSETS || {};
   const AS = (key) => window.PCB_ASSETS[key] || (SRC + key);
-  const NCHAR = 6;                                               // 選べるキャラ数（6体）。同じキャラを選ぶと、P2側はSF版（番号+6）になる
-  const NACTOR = 12;                                             // SF版を含むアクター数（1〜6＝通常、7〜12＝SF版）
-  const IMG = (n) => n > 6 ? `img/character/SF_Actor1_${n - 6}.png` : `img/character/Actor1_${n}.png`;            // SVアクターのシート（9列×6行、64px）
-  const FACE = (n) => n > 6 ? 'img/face/SF_Actor1.png' : 'img/face/Actor1.png';                            // 顔グラ（4列×2行、144px）
+  const NCHAR = 8;                                               // 選べるキャラ数（WI_ のキャラ8体。1〜8）
+  const WI_NAMES = ['wingly', 'curacao', 'Sanemi', 'sasara', 'Shigemi', 'yuno', 'Hero', 'Heroin'];   // 顔グラ（WI_Face_All）の並び順＝キャラ番号の順
+  const CPU_FIRST = 9, CPU_COUNT = 12;                           // CPUのキャラ：9〜14＝Actor1_1〜6、15〜20＝SF_Actor1_1〜6（12体）
+  const charLabel = (n) => n <= NCHAR ? WI_NAMES[n - 1] : '';
+  const IMG = (n) => n <= NCHAR ? `img/character/WI_${WI_NAMES[n - 1]}_SV.png` : n <= 14 ? `img/character/Actor1_${n - 8}.png` : `img/character/SF_Actor1_${n - 14}.png`;            // SVアクターのシート（9列×6行、64px）
+  const FACE = (n) => 'img/face/WI_Face_All.png';                            // 顔グラ（4列×2行、144px）
   const WEAPON = 'img/Weapon/Weapons1.png';                      // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
   const WEAPON_ID = 2;                                           // 1=短剣、2=剣、3=フレイル、4=斧、5=ムチ、6=杖 ／ 7=弓…（MZのweaponImageId）
   const BATTLEBACKS = ['Clouds', 'Cobblestones4', 'Cyberspace', 'Desert', 'Grassland', 'Lava2', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
-  const SE = { attack: 'audio/se/Attack.ogg', damage: 'audio/se/Damage.ogg', guard: 'audio/se/Guard.ogg',
+  const SE = { miss: 'audio/se/Miss.ogg', attack: 'audio/se/Attack.ogg', damage: 'audio/se/Damage.ogg', guard: 'audio/se/Guard.ogg',
                charge: 'audio/se/Powerup.ogg', drain: 'audio/se/Absorb.ogg', dash: 'audio/se/PreAttack.ogg',
                just: 'audio/se/JustGurad.ogg', crit: 'audio/se/Critical.ogg', tie: 'audio/se/Left.ogg' };
   const BGM = 'audio/bgm/03_Endless_Battle.ogg';
@@ -561,16 +563,14 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- 選択画面 ----------
   let cpuPick = 0;                      // CPU戦のCPUのキャラ。0＝ランダム（バトルごとに変わる）
-  const randomOther = (n) => { let r; do { r = 1 + Math.floor(Math.random() * NACTOR); } while (r === n); return r; };   // SF版を含む12体から（CPU用）
-  // 同じキャラを選んだら、P2側（オンラインではゲスト側）がSF版になる
-  const actorOf = (i) => {
-    if (chars[0] !== chars[1] || chars[0] > NCHAR) return chars[i];
-    const sf = mode === 'online' ? (ONLINE.seat === 1 ? 0 : 1) : 1;
-    return i === sf ? chars[i] + NCHAR : chars[i];
-  };
+  const randomCpu = () => CPU_FIRST + Math.floor(Math.random() * CPU_COUNT);   // CPUのキャラ：Actor1／SF版の12体からランダム
+  const randomOther = (n) => { let r; do { r = 1 + Math.floor(Math.random() * NCHAR); } while (r === n); return r; };   // 選べるキャラ（WI）の中で、n以外
+  const actorOf = (i) => chars[i];
   // そのキャラ(n)を、プレイヤー(idx)が選べないか（同じキャラは選べない）
   function isTaken(idx, n) {
-    return false;   // 同じキャラも選べる（P2側がSF版になる）
+    if (mode === 'hot') return chars[1 - idx] === n;
+    if (mode === 'online') return idx === 0 && ONLINE.oppChar === n;
+    return false;
   }
   function buildFaces(el, idx) {
     el.innerHTML = '';
@@ -587,7 +587,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const taken = isTaken(idx, n);
       const selected = cpuSide ? cpuPick === n : chars[idx] === n;
       b.type = 'button'; b.className = 'face' + (selected ? ' sel' : '') + (taken ? ' taken' : '');
-      const m = (n - 1) % 6, col = m % 4, row = Math.floor(m / 4);
+      const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
       b.style.backgroundImage = `url(${AS(FACE(n))})`;
       b.style.backgroundSize = '400% 200%';
       b.style.backgroundPosition = `${col * 100 / 3}% ${row * 100}%`;
@@ -613,7 +613,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     $('#onlinePanel').hidden = !online;
     $('#startRow').style.display = online ? 'none' : '';
     $('#bgRow').style.display = online ? 'none' : '';
-    if (chars[1] > NCHAR) chars[1] = ((chars[1] - 1) % NCHAR) + 1;   // CPU戦で入ったSF版の番号を、選択用に戻す
+    if (chars[0] > NCHAR) chars[0] = 1;
+    if (chars[1] > NCHAR || chars[1] === chars[0]) chars[1] = randomOther(chars[0]);   // CPU戦で入ったCPUキャラの番号などを、選べるキャラに戻す／同じキャラは選べない
     buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
   }
   $('#mode').addEventListener('change', refreshSelect);
@@ -963,7 +964,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     const chips = [];
     if (state.ch[i]) chips.push(`<span class="chip on">◆貯め済み×${cfg.chargeMult}</span>`);
     if (state.ds[i] > 0) chips.push(`<span class="chip">防御連続${state.ds[i]}</span>`);
-    return `<div class="nm"><span>${nameOf(i)}</span><small>キャラ${chars[i]}</small></div>
+    return `<div class="nm"><span>${nameOf(i)}</span><small>${charLabel(chars[i])}</small></div>
       <div class="hpnum">${hp}<small> / ${cfg.hp}</small></div>
       <div class="gauge"><i class="${low ? 'low' : ''}" style="width:${hp / cfg.hp * 100}%"></i></div>
       <div class="chips">${chips.join('')}</div>`;
@@ -1068,7 +1069,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         pop(ev.to, String(ev.dmg), '');
         view.hp[ev.to] -= ev.dmg; renderStatus();
         if (ev.mult > 1) { bigText(`×${ev.mult} 強打！`, 'charge'); zoomPunch(200); }
-        if (ev.defFailed) { popText(ev.to, 'ガード失敗！', 'bad'); bigText('ガード失敗…', 'fail'); say(`${nameOf(ev.to)}の防御は失敗した！`); }
+        if (ev.defFailed) { playSE(SE.miss, 0.9); popText(ev.to, 'ガード失敗！', 'bad'); bigText('ガード失敗…', 'fail'); say(`${nameOf(ev.to)}の防御は失敗した！`); }
         else say(`${nameOf(ev.to)}に${ev.dmg}のダメージ！`);
       }
       if (ev.crit.hit) {
@@ -1216,7 +1217,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     refreshSelect();
     applyRules();
     // CPU戦：CPUのキャラは、ランダム指定ならバトルごとに変える（自分と同じキャラにはならない）
-    if (mode === 'cpu') chars[1] = randomOther(chars[0]);   // SF版を含む12体からランダム（自分と同じ番号にはしない）
+    if (mode === 'cpu') chars[1] = randomCpu();   // CPUはActor1／SF版の12体からランダム
     state = PCB.newState(cfg);
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');
@@ -1460,7 +1461,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         if (room.host.uid === api.uid) return null;                                   // 自分の部屋（再入室）
         if (room.guest && room.guest.uid === api.uid) return null;                    // 再入室
         if (room.guest) throw new Error('この部屋は満員です');
-        joinedChar = ONLINE.myChar;   // ホストと同じキャラなら、ゲスト側がSF版になる
+        joinedChar = ONLINE.myChar;
+        if (room.host.char === joinedChar) joinedChar = randomOther(joinedChar);   // 同じキャラは選べない：ホストと違うキャラにする
         room.guest = { uid: api.uid, name, char: joinedChar };
         return room;
       });
@@ -1503,7 +1505,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     renderPlayers(me, op, room);
     // 相手が選んでいるキャラは、自分の選択欄で選べなくする（同じキャラは選べない）
     const oc = op ? op.char : 0;
-    ONLINE.oppChar = oc;
+    if (oc !== ONLINE.oppChar) { ONLINE.oppChar = oc; buildFaces($('#faces1'), 0); }
     // ルールの表示（ホストだけ、ロビーの間は変えられる）
     $('#ruleSummary').textContent = rulesText(room.cfg);
     const isHost = ONLINE.seat === 0 && room.phase === 'lobby';
@@ -1521,7 +1523,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // 顔グラ（素材が無い時は色だけ）
   function faceCss(n) {
-    const m = (n - 1) % 6, col = m % 4, row = Math.floor(m / 4);
+    const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
     return `background-image:url(${AS(FACE(n))});background-size:400% 200%;background-position:${col * 100 / 3}% ${row * 100}%;background-color:hsl(${n * 47 % 360} 55% 38%)`;
   }
   // ロビーの参加者表示。入力欄は作り直さない（名前を打っている最中に消えないように）
@@ -1763,6 +1765,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       ONLINE.api.mutate(ONLINE.code, (rm) => {
         const p = seat === 0 ? rm.host : rm.guest, other = seat === 0 ? rm.guest : rm.host;
         if (!p) return null;
+        if (other && other.char === n) return null;       // 相手と同じキャラは選べない
         p.char = n;
         return rm;
       }).catch(() => {});
