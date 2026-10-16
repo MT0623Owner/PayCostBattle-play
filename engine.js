@@ -251,8 +251,23 @@
   }
   // 最強：勝率表で1手先を読んだ「手ごとの期待勝率」を、(1)相手の癖の予測と(2)相手が均衡で来た場合、の両方に対して求めて混ぜる。
   // EXPLOIT＝予測をどれだけ信じるか（0＝完全に均衡、1＝予測だけ）。選ぶ手は、混ぜた期待勝率が最大の手（同率なら均衡の混ぜ方）
-  let EXPLOIT = 0.6;
-  function setExploit(x) { EXPLOIT = x; }
+  // 人間（ログ860ラウンド）の手の傾向：キー＝[相手が溜め済み][自分が溜め済み][相手の前の手 N=初手/A/C/D] → [攻撃, 溜め, 防御] の回数
+  const HUMAN_PRIOR = {"00N":[0,21,1],"00C":[9,27,10],"00D":[146,15,56],"01A":[25,61,54],"01C":[0,1,0],"11C":[12,12,44],"01D":[15,2,60],"10C":[58,50,23],"00A":[44,64,50]};
+  // 人間の傾向を、状況（相手・自分の溜め済み、相手の前の手）から引く。件数が少ない状況は、溜め済みだけの集計、全体の順にならして使う
+  function humanProb(S, i, j, okOpp) {
+    const key = (S.ch[j] ? '1' : '0') + (S.ch[i] ? '1' : '0');
+    const tot = [0, 0, 0], loadSum = [0, 0, 0];
+    for (const k in HUMAN_PRIOR) { for (let a = 0; a < 3; a++) { tot[a] += HUMAN_PRIOR[k][a]; if (k.slice(0, 2) === key) loadSum[a] += HUMAN_PRIOR[k][a]; } }
+    const norm = (c, base, st) => { const n = c[0] + c[1] + c[2]; return c.map((x, a) => (x + st * base[a]) / (n + st)); };
+    const g = norm(tot, [1 / 3, 1 / 3, 1 / 3], 3);
+    const l = norm(loadSum, g, 8);
+    const f = norm(HUMAN_PRIOR[key + (S.last[j] || 'N')] || [0, 0, 0], l, 8);
+    const idx = { A: 0, C: 1, D: 2 };
+    const ps = okOpp.map((c) => f[idx[c]]), z = ps.reduce((x, y) => x + y, 0) || 1;
+    return ps.map((x) => x / z);
+  }
+  let EXPLOIT = 0.6, USE_PRIOR = true;
+  function setExploit(x, usePrior) { EXPLOIT = x; if (usePrior !== undefined) USE_PRIOR = usePrior; }
   function cpuMax(S, i, cfg, rnd) {
     const j = 1 - i, ok = allowed(S.last[i], cfg, S.hp[i]), okOpp = allowed(S.last[j], cfg, S.hp[j]);
     const A = ok.map((a) => okOpp.map((b) => {
@@ -265,10 +280,13 @@
     const Bt = okOpp.map((_, c) => ok.map((_, r) => 1 - A[r][c]));
     const q = solveGame(Bt, okOpp.length, ok.length).p;            // 相手の均衡の混ぜ方
     const model = oppModel(S, j, cfg);
-    const pm = okOpp.map((c) => (model.p[c] || 0));
-    const tot = pm.reduce((x, y) => x + y, 0) || 1;
-    const w = EXPLOIT * Math.min(1, model.n / 4);                   // 観測が少ないうちは予測を信じすぎない
-    const qq = okOpp.map((_, k) => w * pm[k] / tot + (1 - w) * q[k]);
+    const pm0 = okOpp.map((c) => (model.p[c] || 0));
+    const tot0 = pm0.reduce((x, y) => x + y, 0) || 1;
+    // 予測＝人間の傾向（状況別）と、この対戦での癖を混ぜる。観測が少ないうちは、傾向を中心にする
+    const hp = USE_PRIOR ? humanProb(S, i, j, okOpp) : null;
+    const pm = hp ? okOpp.map((_, k) => 0.7 * hp[k] + 0.3 * pm0[k] / tot0) : pm0.map((x) => x / tot0);
+    const w = hp ? EXPLOIT : EXPLOIT * Math.min(1, model.n / 4);   // 傾向が無い時は、観測が少ないうちは予測を信じすぎない
+    const qq = okOpp.map((_, k) => w * pm[k] + (1 - w) * q[k]);
     const val = ok.map((_, r) => qq.reduce((acc, qk, k) => acc + qk * A[r][k], 0));
     let best = 0;
     for (let r = 1; r < ok.length; r++) if (val[r] > val[best] + 1e-9) best = r;
@@ -330,7 +348,7 @@
     return best;
   }
 
-  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose, setEqTable, setExploit };
+  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose, setEqTable, setExploit, humanProb };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PCB = api;
 })(typeof window !== 'undefined' ? window : globalThis);
