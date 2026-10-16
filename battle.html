@@ -86,6 +86,20 @@ select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--w
 /* 揺れは個別プロパティ translate で行う（transform は、ステージの拡大縮小に使っているため上書きしない） */
 @keyframes shake { 0%, 100% { translate: 0 0; } 20% { translate: -8px 0; } 40% { translate: 7px 0; } 60% { translate: -5px 0; } 80% { translate: 3px 0; } }
 
+/* 対戦ログ */
+#logModal { position: fixed; inset: 0; background: rgba(0, 0, 0, .7); z-index: 50; display: grid; place-items: center; padding: 12px; }
+#logModal[hidden] { display: none; }
+.logbox { background: #0e1538; border: 2px solid var(--win-line); border-radius: 12px; width: min(980px, 100%); max-height: 92vh; display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+.logtop { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--win-line); }
+.logtop .logbtns { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.logtop .btn { padding: 4px 10px; font-size: .85rem; }
+#logList { overflow: auto; padding: 8px 14px 14px; font-size: .85rem; }
+#logList details { border: 1px solid var(--win-line); border-radius: 8px; margin: 6px 0; padding: 4px 8px; }
+#logList summary { cursor: pointer; }
+#logList table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+#logList th, #logList td { border-bottom: 1px solid rgba(255, 255, 255, .12); padding: 2px 6px; text-align: left; vertical-align: top; }
+#logList .w { color: #6bff9a; } #logList .l { color: #ff7a7a; } #logList .d { color: #ffe45e; }
+
 /* ステータスウィンドウ（MZ風） */
 .status { position: absolute; top: 10px; width: 280px; padding: 8px 14px; transition: box-shadow .25s, border-color .25s; }
 .status.gain { box-shadow: 0 0 0 3px #6bff9a, 0 0 22px #6bff9a; border-color: #6bff9a; }
@@ -213,7 +227,15 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       <button class="btn" id="btnSpeed" type="button">演出：通常</button>
       <button class="btn" id="btnLite" type="button" title="回線や端末が重い時用。BGM・エフェクト・画面フラッシュを止めて、軽くします">軽量モード：OFF</button>
       <button class="btn" id="btnMute" type="button">音：ON</button>
+      <button class="btn" id="btnLog" type="button" title="これまでの対戦の記録（このブラウザに保存されます）">ログ</button>
       <button class="btn" id="btnMenu" type="button">メニューに戻る</button>
+    </div>
+  </div>
+  <div id="logModal" hidden>
+    <div class="logbox">
+      <div class="logtop"><b>対戦ログ</b><span id="logStat"></span>
+        <span class="logbtns"><button class="btn" id="logJson" type="button">JSONで保存</button><button class="btn" id="logCsv" type="button">CSVで保存</button><button class="btn" id="logClear" type="button">全部消す</button><button class="btn" id="logClose" type="button">閉じる</button></span></div>
+      <div id="logList"></div>
     </div>
   </div>
   <div class="note" style="margin-top:6px">BGM（一部）：魔王魂 様の楽曲を使用しています。</div>
@@ -1166,12 +1188,83 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
 
   // 1ラウンドの結果(r)を演出する。finalState があれば、演出後にそれを状態にする（オンライン）。無ければ r を適用する。
+  // ---------- 対戦ログ（このブラウザの localStorage に保存。次に開いた時も残る） ----------
+  const LOG_KEY = 'pcb_log_v1', LOG_MAX = 150;
+  let LOGS = [];
+  try { LOGS = JSON.parse(localStorage.getItem(LOG_KEY) || '[]') || []; } catch (e) { LOGS = []; }
+  let curLog = null;
+  const NAMES_CMD = { A: '攻撃', C: '貯め', D: '防御' };
+  function logSave() { try { localStorage.setItem(LOG_KEY, JSON.stringify(LOGS.slice(-LOG_MAX))); } catch (e) { /* 容量不足などは無視 */ } }
+  function logStart() {
+    const rules = { hp: cfg.hp, crit: (cfg.critBase > 0 || cfg.critK > 0) ? 1 : 0, justGuard: cfg.justGuard ? 1 : 0, jgStep: cfg.jgStep || 0, jgCap: cfg.jgCap, reflect: cfg.reflect };
+    curLog = { id: Date.now().toString(36), t: new Date().toISOString(), mode, rules,
+               names: [nameOf(0), nameOf(1)], chars: [charLabel(chars[0]) || ('CPU' + chars[0]), charLabel(chars[1]) || ('CPU' + chars[1])],
+               rounds: [], result: null };
+    LOGS.push(curLog); logSave();
+  }
+  function evText(ev, nm) {
+    if (ev.t === 'attack') {
+      let x = nm[ev.from] + (ev.mult > 1 ? '攻撃×' + ev.mult : '攻撃');
+      if (ev.blocked) x += '→ガード成功' + (ev.just && ev.just.hit ? '＋ジャスガ(反射' + ev.just.reflect + ')' : '');
+      else x += ev.defended ? '→ガード失敗' + ev.dmg : '→' + ev.dmg;
+      if (ev.crit && ev.crit.hit) x += ev.crit.reflected ? '＋クリ見切り(攻撃側−' + ev.crit.amount + ')' : '＋クリ(吸収' + ev.crit.amount + ')';
+      return x;
+    }
+    if (ev.t === 'charge') return nm[ev.who] + '貯め' + (ev.loaded ? '' : '(上限)');
+    if (ev.t === 'mirror') return 'あいこ−' + ev.amount;
+    return '';
+  }
+  function logRound(cmd, r, hpBefore, hpAfter, round) {
+    if (!curLog) return;
+    const nm = ['P1', 'P2'];
+    curLog.rounds.push({ n: round, cmd: cmd.slice(), before: hpBefore, after: hpAfter, ev: r.events.map((e) => evText(e, nm)).filter(Boolean).join(' / ') });
+    logSave();
+  }
+  function logFinish(res) {
+    if (!curLog) return;
+    curLog.result = res === 'draw' ? 'draw' : res === 0 ? 'p1' : 'p2';
+    logSave(); curLog = null;
+  }
+  const esc2 = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function logRender() {
+    const done = LOGS.filter((m) => m.result);
+    const w = done.filter((m) => m.result === 'p1').length, l = done.filter((m) => m.result === 'p2').length, d = done.filter((m) => m.result === 'draw').length;
+    const rs = done.reduce((a, m) => a + m.rounds.length, 0);
+    $('#logStat').textContent = LOGS.length + '戦（P1側 ' + w + '勝 ' + l + '敗 ' + d + '分／平均 ' + (done.length ? (rs / done.length).toFixed(1) : '-') + 'ラウンド）';
+    const MODE = { cpu: 'CPU', hot: '交代', online: 'オンライン' };
+    $('#logList').innerHTML = LOGS.slice().reverse().map((m) => {
+      const res = m.result === 'p1' ? '<span class="w">P1勝ち</span>' : m.result === 'p2' ? '<span class="l">P2勝ち</span>' : m.result === 'draw' ? '<span class="d">引き分け</span>' : '（未決着）';
+      const ru = m.rules || {};
+      const rows = m.rounds.map((r) => '<tr><td>' + r.n + '</td><td>' + (NAMES_CMD[r.cmd[0]] || '') + '</td><td>' + (NAMES_CMD[r.cmd[1]] || '') + '</td><td>' + r.before[0] + '→' + r.after[0] + '</td><td>' + r.before[1] + '→' + r.after[1] + '</td><td>' + esc2(r.ev) + '</td></tr>').join('');
+      return '<details><summary>' + new Date(m.t).toLocaleString('ja-JP') + '　' + (MODE[m.mode] || m.mode) + '　' + esc2(m.names[0]) + '(' + esc2(m.chars[0]) + ') vs ' + esc2(m.names[1]) + '(' + esc2(m.chars[1]) + ')　' + res + '　' + m.rounds.length + 'R　HP' + ru.hp + '／ジャスガ' + (ru.justGuard ? 'あり' : 'なし') + (ru.jgStep ? '(連続+' + Math.round(ru.jgStep * 100) + '%)' : '') + '／クリ' + (ru.crit ? 'あり' : 'なし') + '</summary>' +
+        '<table><tr><th>R</th><th>P1の手</th><th>P2の手</th><th>P1 HP</th><th>P2 HP</th><th>出来事</th></tr>' + rows + '</table></details>';
+    }).join('') || '<p>まだログがありません。</p>';
+  }
+  function logDownload(name, text, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  $('#btnLog').addEventListener('click', () => { logRender(); $('#logModal').hidden = false; });
+  $('#logClose').addEventListener('click', () => { $('#logModal').hidden = true; });
+  $('#logJson').addEventListener('click', () => logDownload('pcb-log.json', JSON.stringify(LOGS, null, 1), 'application/json'));
+  $('#logCsv').addEventListener('click', () => {
+    const q = (v) => '"' + String(v).split('"').join('""') + '"';
+    const head = ['match', 'time', 'mode', 'P1', 'P2', 'result', 'hp', 'justGuard', 'jgStep', 'round', 'cmd1', 'cmd2', 'hp1_before', 'hp2_before', 'hp1_after', 'hp2_after', 'events'];
+    const lines = [head.join(',')];
+    LOGS.forEach((m) => m.rounds.forEach((r) => lines.push([m.id, m.t, m.mode, m.chars[0], m.chars[1], m.result || '', (m.rules || {}).hp, (m.rules || {}).justGuard, (m.rules || {}).jgStep, r.n, r.cmd[0], r.cmd[1], r.before[0], r.before[1], r.after[0], r.after[1], r.ev].map(q).join(','))));
+    logDownload('pcb-log.csv', '\uFEFF' + lines.join('\r\n'), 'text/csv');
+  });
+  $('#logClear').addEventListener('click', () => { if (confirm('保存されている対戦ログを、すべて消します。よろしいですか？')) { LOGS = []; curLog = null; logSave(); logRender(); } });
+
   async function presentRound(cmd, r, finalState) {
     try { await presentRound0(cmd, r, finalState); } catch (e) { if (e !== ABORT) throw e; }
   }
   async function presentRound0(cmd, r, finalState) {
     if (busy) return;
     busy = true; skip = false; renderCommands();
+    const hpBefore = state.hp.slice();
     view = { hp: state.hp.slice() };
     hideTags();
     showTags(cmd);
@@ -1183,6 +1276,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     // 結果を反映
     view = null;
     if (finalState) Object.assign(state, finalState); else PCB.apply(state, cmd, r);
+    logRound(cmd, r, hpBefore, state.hp.slice(), state.round - 1);
     pick = [null, null]; phase = 'p1';
     renderStatus();
     await sleep(520);
@@ -1199,6 +1293,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   async function finish() {
     say('');
     const res = state.result;
+    logFinish(res);
     let text, cls;
     if (res === 'draw') {
       text = 'DRAW'; cls = 'draw';
@@ -1240,6 +1335,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     // CPU戦：CPUのキャラは、ランダム指定ならバトルごとに変える（自分と同じキャラにはならない）
     if (mode === 'cpu') chars[1] = randomCpu();   // CPUはActor1／SF版の12体からランダム
     state = PCB.newState(cfg);
+    logStart();
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');
     B[0].setActor(actorOf(0)); B[1].setActor(actorOf(1));
@@ -1637,6 +1733,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
     const me = ONLINE.seat === 0 ? room.host : room.guest, op = ONLINE.seat === 0 ? room.guest : room.host;
     mode = 'online'; onlineNames = [me.name, op.name]; chars = [me.char, op.char];
     state = viewState(room.state, ONLINE.seat);
+    logStart();
     ONLINE.nextShow = room.state.round;
     pick = [null, null]; phase = 'p1'; busy = false; skip = false;
     $('#banner').classList.remove('on');
