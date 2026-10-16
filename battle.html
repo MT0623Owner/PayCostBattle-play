@@ -1089,7 +1089,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         playFX('heal', ev.from, { dy: -70 });                      // 吸収：奪った側に、回復（HealAll2）のエフェクト
         pop(ev.to, `−${ev.crit.amount}`, 'drain', 10, 20);
         setTimeout(() => pop(ev.from, `+${ev.crit.amount}`, 'heal', 0), 480 * speed);
-        say(`クリティカル！ ${nameOf(ev.from)}は${nameOf(ev.to)}から${ev.crit.amount}を奪った！`);
+        say(`クリティカル！ ${ev.crit.amount}を奪った！`);
         view.hp[ev.to] -= ev.crit.amount; view.hp[ev.from] += ev.crit.amount; renderStatus();
         }
         await sleep(620);                                         // 見せ場の間
