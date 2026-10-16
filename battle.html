@@ -361,7 +361,6 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
 <script src="engine.js"></script>
 <script src="firebase-config.js"></script>
-
 <script>
 (() => {
   'use strict';
@@ -720,10 +719,11 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const FXFILES = { slash: 'effect/SlashPhysical_MZ.efkefc', hit: 'effect/HitPhysical_MZ.efkefc', power: 'effect/Powerup1_MZ.efkefc', up: 'effect/Powerup3.efkefc' };
   const TEXDIR = 'effect/Texture/';
   const TEXNAMES = ['Particle100', 'Slash1', 'Circle', 'Fog', 'ParticleAlpha', 'ShockWaveRing1', 'Shield', 'Rhombus1', 'Ring'];
+  const MODEL_URLS = new Set();   // 3Dモデルのblob URL（画像として読まないための目印）
   const FX_SCALE = 1.0;     // 読み込み時の倍率（等倍のまま。大きさは下の FXSCALE で再生時に決める）
   // 再生時の大きさ（1ユニット＝約1.0pxだと、MZのエフェクトは十数pxにしかならない。実測で、画面上で
   // 斬撃≒200px・命中≒170px・貯め≒160px幅になる倍率にしてある。大きすぎ・小さすぎなら、ここを調整する）
-  const FXSCALE = { slash: 12, hit: 8, power: 14, up: 14 };
+  const FXSCALE = { slash: 12, hit: 8, power: 14, up: 8 };
   const EFX = { ready: false, ctx: null, gl: null, canvas: null, effects: {}, handles: new Set(), raf: 0, last: 0, tex: {}, missing: [] };
 
   // テクスチャ画像が無い時の代用（やわらかい光の円／細い光の線）。本物を置けば自動で本物が使われる
@@ -779,18 +779,18 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           const base = path.split('?')[0];
           const dot = base.lastIndexOf('.');
           const ext = dot >= 0 ? base.slice(dot).toLowerCase() : '';
-          if (path.startsWith('data:image') || path.startsWith('blob:') || ext === '.png' || ext === '.jpg' || ext === '.jpeg') {
+          if (!MODEL_URLS.has(path) && (path.startsWith('data:image') || path.startsWith('blob:') || ext === '.png' || ext === '.jpg' || ext === '.jpeg')) {
             const img = new Image();
             img.crossOrigin = 'anonymous';
             img.onload = () => onload(toPow2(img));
-            img.onerror = () => { if (onerror) onerror('not found', path); };
+            img.onerror = () => { if (onerror) onerror('not found: ' + path.slice(0, 80), path); };
             img.src = path;
           } else {
             const xhr = new XMLHttpRequest();
             xhr.open('GET', path, true);
             xhr.responseType = 'arraybuffer';
-            xhr.onload = () => { if (xhr.status === 200 || xhr.status === 0) onload(xhr.response); else if (onerror) onerror('not found', path); };
-            xhr.onerror = () => { if (onerror) onerror('not found', path); };
+            xhr.onload = () => { if (xhr.status === 200 || xhr.status === 0) onload(xhr.response); else if (onerror) onerror('not found: ' + path.slice(0, 80), path); };
+            xhr.onerror = () => { if (onerror) onerror('not found: ' + path.slice(0, 80), path); };
             xhr.send(null);
           }
         });
@@ -798,6 +798,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         ctx.setCameraLookAt(0, 0, 1000, 0, 0, 0, 0, 1, 0);
         EFX.ctx = ctx;
         const redirect = (p) => {
+          const md = /([^\/\\]+)\.efkmodel$/i.exec(p);
+          if (md) { const u = AS('effect/Model/' + md[1] + '.efkmodel'); MODEL_URLS.add(u); return u; }          // 3Dモデル（パック／素材フォルダから）
           const m = /([^\/\\]+)\.png$/i.exec(p);
           return (m && EFX.tex[m[1]]) ? EFX.tex[m[1]] : p;
         };
