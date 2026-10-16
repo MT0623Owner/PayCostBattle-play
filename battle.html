@@ -587,10 +587,8 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const taken = isTaken(idx, n);
       const selected = cpuSide ? cpuPick === n : chars[idx] === n;
       b.type = 'button'; b.className = 'face' + (selected ? ' sel' : '') + (taken ? ' taken' : '');
-      const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
-      b.style.backgroundImage = `url(${AS(FACE(n))})`;
-      b.style.backgroundSize = '400% 200%';
-      b.style.backgroundPosition = `${col * 100 / 3}% ${row * 100}%`;
+      const fu = faceUrl(n);
+      if (fu) { b.style.backgroundImage = `url(${fu})`; b.style.backgroundSize = '100% 100%'; }
       b.style.backgroundColor = `hsl(${n * 47 % 360} 55% 38%)`;   // 画像が無い時の代用色
       b.setAttribute('aria-label', `キャラ${n}${taken ? '（相手が選択中）' : ''}`);
       b.innerHTML = `<span>${taken ? '選択中' : n}</span>`;
@@ -1521,10 +1519,30 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   }
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  // 顔グラ：顔グラのシート（144×144の顔が4列×2行）から、1人分を144×144ちょうどで切り出して使う
+  // （CSSで「400%・位置%」と指定すると、枠の線や端数で、隣の顔が1pxほど混ざることがあるため、先に切り出す）
+  const faceUrls = {};
+  function faceUrl(n) {
+    if (faceUrls[n]) return faceUrls[n];
+    if (faceUrls['p' + n]) return '';
+    faceUrls['p' + n] = 1;
+    const im = new Image();
+    im.onload = () => {
+      const m = (n - 1) % 8, c = document.createElement('canvas');
+      c.width = c.height = 144;
+      c.getContext('2d').drawImage(im, (m % 4) * 144, Math.floor(m / 4) * 144, 144, 144, 0, 0, 144, 144);
+      faceUrls[n] = c.toDataURL('image/png');
+      buildFaces($('#faces1'), 0); buildFaces($('#faces2'), 1);
+      if (ONLINE.room && ONLINE.room.phase === 'lobby') renderLobby(ONLINE.room);
+    };
+    im.onerror = () => { delete faceUrls['p' + n]; };   // 素材パックが読み込めたら、あとで作り直す
+    im.src = AS(FACE(n));
+    return '';
+  }
   // 顔グラ（素材が無い時は色だけ）
   function faceCss(n) {
-    const m = (n - 1) % 8, col = m % 4, row = Math.floor(m / 4);
-    return `background-image:url(${AS(FACE(n))});background-size:400% 200%;background-position:${col * 100 / 3}% ${row * 100}%;background-color:hsl(${n * 47 % 360} 55% 38%)`;
+    const fu = faceUrl(n);
+    return (fu ? `background-image:url(${fu});background-size:100% 100%;` : '') + `background-color:hsl(${n * 47 % 360} 55% 38%)`;
   }
   // ロビーの参加者表示。入力欄は作り直さない（名前を打っている最中に消えないように）
   function renderPlayers(me, op, room) {
