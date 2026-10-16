@@ -58,7 +58,7 @@ select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--w
     linear-gradient(#7cc4ff 0%, #bfe4ff 52%, #5da24a 52.1%, #3d7a30 100%); }
 .bg1, .bg2 { position: absolute; inset: 0; background-size: cover; background-position: center bottom; background-repeat: no-repeat; }
 .battler { position: absolute; width: 160px; height: 160px; transition: transform .35s ease-out; will-change: transform; }
-.battler .shadow { position: absolute; left: 22px; bottom: 6px; width: 116px; height: 22px; border-radius: 50%; background: rgba(0, 0, 0, .35); }
+.battler .shadow { position: absolute; left: 24px; bottom: -6px; width: 112px; height: 20px; border-radius: 50%; background: rgba(0, 0, 0, .35); }
 .battler .aura { position: absolute; left: 6px; top: 6px; width: 148px; height: 148px; border-radius: 50%; opacity: 0; background: radial-gradient(circle, rgba(255, 230, 90, .75) 0%, rgba(255, 170, 40, .35) 45%, transparent 70%); }
 .battler.charged .aura { opacity: 1; animation: aura 1s ease-in-out infinite alternate; }
 @keyframes aura { from { transform: scale(.9); opacity: .55; } to { transform: scale(1.12); opacity: 1; } }
@@ -112,6 +112,7 @@ select { background: var(--win-bg); color: var(--ink); border: 1px solid var(--w
 .bigtext { position: absolute; left: 50%; top: 44%; transform: translate(-50%, -50%) rotate(-4deg); font-weight: 900; font-style: italic; font-size: 92px; letter-spacing: .06em; color: #fff; -webkit-text-stroke: 7px #14204f; paint-order: stroke fill; white-space: nowrap; pointer-events: none; text-shadow: 0 8px 0 rgba(0, 0, 0, .35); animation: bigin 1s cubic-bezier(.2, 1.5, .4, 1) forwards; z-index: 4; }
 .bigtext.crit { color: #ffe45e; font-size: 118px; }
 .bigtext.guard { color: #9fd0ff; font-size: 80px; }
+.bigtext.just { color: #fff3b0; font-size: 76px; }
 .bigtext.charge { color: #ffa23a; font-size: 82px; }
 .bigtext.fail { color: #ff7a7a; font-size: 74px; }
 @keyframes bigin { 0% { opacity: 0; transform: translate(-50%, -50%) scale(2.6) rotate(-10deg); } 18% { opacity: 1; transform: translate(-50%, -50%) scale(.92) rotate(-4deg); } 32% { transform: translate(-50%, -50%) scale(1.1) rotate(-4deg); } 78% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(-4deg); } 100% { opacity: 0; transform: translate(-50%, -64%) scale(1.12) rotate(-4deg); } }
@@ -333,10 +334,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         <div class="bg1" id="bg1"></div>
         <div class="bg2" id="bg2"></div>
 
-        <div class="battler" id="bt1" style="left:520px; top:210px;">
+        <div class="battler" id="bt1" style="left:574px; top:210px;">
           <div class="shadow"></div><div class="aura"></div><div class="body"><div class="sprite"></div><div class="weapon"></div></div><div class="tag" id="tag1"></div>
         </div>
-        <div class="battler flip" id="bt0" style="left:150px; top:230px;">
+        <div class="battler flip" id="bt0" style="left:96px; top:230px;">
           <div class="shadow"></div><div class="aura"></div><div class="body"><div class="sprite"></div><div class="weapon"></div></div><div class="tag" id="tag0"></div>
         </div>
         <canvas id="fxgl" width="816" height="480"></canvas>
@@ -394,9 +395,9 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   const WEAPON = 'img/Weapon/Weapons1.png';                      // 武器（96×64、1行に3コマ。左6行＝近接、右6行＝弓・銃など）
   const WEAPON_ID = 2;                                           // 1=短剣、2=剣、3=フレイル、4=斧、5=ムチ、6=杖 ／ 7=弓…（MZのweaponImageId）
   const BATTLEBACKS = ['Clouds', 'Cobblestones4', 'Cyberspace', 'Desert', 'Grassland', 'Lava2', 'Wood1'];          // ./src/img/battleback/<名前>.png（1000×740）
-  const SE = { attack: 'audio/se/Attack3.ogg', damage: 'audio/se/Damage2.ogg', guard: 'audio/se/Reflection.ogg',
-               charge: 'audio/se/Powerup.ogg', drain: 'audio/se/Absorb2.ogg',
-               sword: 'audio/se/Sword1.ogg', blow: 'audio/se/Blow1.ogg', dash: 'audio/se/Evasion2.ogg', just: 'audio/se/Reflection.ogg', crit: 'audio/se/Skill3.ogg' };
+  const SE = { attack: 'audio/se/Attack.ogg', damage: 'audio/se/Damage.ogg', guard: 'audio/se/Guard.ogg',
+               charge: 'audio/se/Powerup.ogg', drain: 'audio/se/Absorb.ogg', dash: 'audio/se/PreAttack.ogg',
+               just: 'audio/se/JustGurad.ogg', crit: 'audio/se/Critical.ogg', tie: 'audio/se/Left.ogg' };
   const BGM = 'audio/bgm/03_Endless_Battle.ogg';
   const ME = { win: 'audio/me/Victory2.ogg', lose: 'audio/me/Defeat1.ogg', draw: 'audio/me/Gag.ogg' };
 
@@ -716,14 +717,14 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- Effekseer（本物のMZエフェクト） ----------
   // 1ユニット＝1px の正射影で、ステージ（816×480）にそのまま重ねる。
-  const FXFILES = { slash: 'effect/SlashPhysical_MZ.efkefc', hit: 'effect/HitPhysical_MZ.efkefc', power: 'effect/Powerup1_MZ.efkefc', up: 'effect/Powerup3.efkefc' };
+  const FXFILES = { slash: 'effect/SlashPhysical_MZ.efkefc', hit: 'effect/HitPhysical_MZ.efkefc', power: 'effect/Powerup1_MZ.efkefc', heal: 'effect/HealAll2.efkefc' };
   const TEXDIR = 'effect/Texture/';
-  const TEXNAMES = ['Particle100', 'Slash1', 'Circle', 'Fog', 'ParticleAlpha', 'ShockWaveRing1', 'Shield', 'Rhombus1', 'Ring'];
+  const TEXNAMES = ['Particle100', 'Slash1', 'Circle', 'Fog', 'ParticleAlpha', 'ShockWaveRing1', 'Spin'];
   const MODEL_URLS = new Set();   // 3Dモデルのblob URL（画像として読まないための目印）
   const FX_SCALE = 1.0;     // 読み込み時の倍率（等倍のまま。大きさは下の FXSCALE で再生時に決める）
   // 再生時の大きさ（1ユニット＝約1.0pxだと、MZのエフェクトは十数pxにしかならない。実測で、画面上で
   // 斬撃≒200px・命中≒170px・貯め≒160px幅になる倍率にしてある。大きすぎ・小さすぎなら、ここを調整する）
-  const FXSCALE = { slash: 12, hit: 8, power: 14, up: 8 };
+  const FXSCALE = { slash: 12, hit: 8, power: 14, heal: 9 };
   const EFX = { ready: false, ctx: null, gl: null, canvas: null, effects: {}, handles: new Set(), raf: 0, last: 0, tex: {}, missing: [] };
 
   // テクスチャ画像が無い時の代用（やわらかい光の円／細い光の線）。本物を置けば自動で本物が使われる
@@ -1037,12 +1038,10 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       say(`${nameOf(ev.from)}の攻撃！${ev.mult > 1 ? '（貯め後）' : ''}`);
       pop(ev.from, `−${ev.cost}`, 'cost', 20);
       view.hp[ev.from] -= ev.cost; renderStatus();
-      a.setMotion('walk', true); a.move(dir * dist); playSE(SE.dash, 0.5);
+      a.setMotion('walk', true); a.move(dir * dist); playSE(SE.dash, 0.7);
       await sleep(360);
-      a.setMotion('swing', false); playSE(SE.sword, 0.75);
+      a.setMotion('swing', false); playSE(SE.attack, ev.mult > 1 ? 0.95 : 0.75);   // 貯め後は大きめに
       await sleep(300);
-      if (ev.mult > 1) playSE(SE.attack, 0.7);                  // 貯め後の攻撃は重い音を重ねる
-      if (!ev.blocked) playSE(SE.blow, 0.85);
       if (ev.blocked) {
         t.setMotion('guard', false); ring(ev.to); playSE(SE.guard, 0.8);
         popText(ev.to, 'ガード！', 'def');
@@ -1051,13 +1050,13 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         if (ev.just && ev.just.hit) {
           // ジャストガード：反射ダメージ
           await sleep(220);
-          bigText('JUST GUARD!', 'crit'); screenFlash('#ffffff', 420); zoomPunch(200);
-          playSE(SE.just, 0.9); playSE(SE.blow, 0.85);
+          bigText('JUST GUARD!', 'just'); screenFlash('#ffffff', 420); zoomPunch(200);
+          playSE(SE.just, 0.9);
           setTimeout(() => playSE(SE.drain, 0.85), 380 * speed);   // ジャストガードの音のあとにも、ドレインの音
           a.setMotion('damage', false); flash(ev.from); shake();
           pop(ev.from, `−${ev.just.reflect}`, 'drain', 10, 20);
           view.hp[ev.from] -= ev.just.reflect; renderStatus();
-          say(`ジャストガード！ ${nameOf(ev.from)}に${ev.just.reflect}を跳ね返した！`);
+          say(`ジャストガード！ ${nameOf(ev.from)}に${ev.just.reflect}反射`);
           await sleep(480);
         }
       } else {
@@ -1077,7 +1076,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         // クリティカルは見せ場：画面フラッシュ・集中線・大きな文字・ズーム・もう一度の揺れ・ドレインの光
         screenFlash('#fff3b0', 560); burst(ev.to); zoomPunch(); bigText('CRITICAL!', 'crit');
         shake(); if (!lite) setTimeout(shake, 150 * speed);
-        playSE(SE.crit, 0.9); playSE(SE.blow, 0.9);
+        playSE(SE.crit, 0.9);
         setTimeout(() => playSE(SE.drain, 0.85), 380 * speed);       // クリティカルの音のあとに、ドレイン（吸収）の音
         if (ev.crit.reflected) {
           // ジャストガードとクリティカルが重なった：奪われるはずだった分を、攻撃側が受ける
@@ -1087,7 +1086,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           view.hp[ev.from] -= ev.crit.amount; renderStatus();
         } else {
         drainFx(ev.to, ev.from); flash(ev.to);
-        playFX('up', ev.from, { dy: -70 });                        // 奪った側に、アップのエフェクト
+        playFX('heal', ev.from, { dy: -70 });                      // 吸収：奪った側に、回復（HealAll2）のエフェクト
         pop(ev.to, `−${ev.crit.amount}`, 'drain', 10, 20);
         setTimeout(() => pop(ev.from, `+${ev.crit.amount}`, 'heal', 0), 480 * speed);
         say(`クリティカル！ ${nameOf(ev.from)}は${nameOf(ev.to)}から${ev.crit.amount}を奪った！`);
@@ -1118,6 +1117,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       await sleep(520);
       b.idle();
     } else if (ev.t === 'mirror') {
+      playSE(SE.tie, 0.9);                                          // あいこで−2される時の声（Left）
       popText(0, `あいこ −${ev.amount}`, 'bad'); popText(1, `あいこ −${ev.amount}`, 'bad');
       view.hp[0] -= ev.amount; view.hp[1] -= ev.amount; renderStatus();
       say('あいこ！ 両者にペナルティ');
