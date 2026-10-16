@@ -717,13 +717,13 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---------- Effekseer（本物のMZエフェクト） ----------
   // 1ユニット＝1px の正射影で、ステージ（816×480）にそのまま重ねる。
-  const FXFILES = { slash: 'effect/SlashPhysical_MZ.efkefc', hit: 'effect/HitPhysical_MZ.efkefc', power: 'effect/Powerup1_MZ.efkefc' };
+  const FXFILES = { slash: 'effect/SlashPhysical_MZ.efkefc', hit: 'effect/HitPhysical_MZ.efkefc', power: 'effect/Powerup1_MZ.efkefc', up: 'effect/Powerup3.efkefc' };
   const TEXDIR = 'effect/Texture/';
-  const TEXNAMES = ['Particle100', 'Slash1', 'Circle', 'Fog', 'ParticleAlpha', 'ShockWaveRing1'];
+  const TEXNAMES = ['Particle100', 'Slash1', 'Circle', 'Fog', 'ParticleAlpha', 'ShockWaveRing1', 'Shield', 'Rhombus1', 'Ring'];
   const FX_SCALE = 1.0;     // 読み込み時の倍率（等倍のまま。大きさは下の FXSCALE で再生時に決める）
   // 再生時の大きさ（1ユニット＝約1.0pxだと、MZのエフェクトは十数pxにしかならない。実測で、画面上で
   // 斬撃≒200px・命中≒170px・貯め≒160px幅になる倍率にしてある。大きすぎ・小さすぎなら、ここを調整する）
-  const FXSCALE = { slash: 12, hit: 8, power: 14 };
+  const FXSCALE = { slash: 12, hit: 8, power: 14, up: 14 };
   const EFX = { ready: false, ctx: null, gl: null, canvas: null, effects: {}, handles: new Set(), raf: 0, last: 0, tex: {}, missing: [] };
 
   // テクスチャ画像が無い時の代用（やわらかい光の円／細い光の線）。本物を置けば自動で本物が使われる
@@ -1051,6 +1051,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           await sleep(220);
           bigText('JUST GUARD!', 'crit'); screenFlash('#ffffff', 420); zoomPunch(200);
           playSE(SE.just, 0.9); playSE(SE.blow, 0.85);
+          setTimeout(() => playSE(SE.drain, 0.85), 380 * speed);   // ジャストガードの音のあとにも、ドレインの音
           a.setMotion('damage', false); flash(ev.from); shake();
           pop(ev.from, `−${ev.just.reflect}`, 'drain', 10, 20);
           view.hp[ev.from] -= ev.just.reflect; renderStatus();
@@ -1075,6 +1076,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
         screenFlash('#fff3b0', 560); burst(ev.to); zoomPunch(); bigText('CRITICAL!', 'crit');
         shake(); if (!lite) setTimeout(shake, 150 * speed);
         playSE(SE.crit, 0.9); playSE(SE.blow, 0.9);
+        setTimeout(() => playSE(SE.drain, 0.85), 380 * speed);       // クリティカルの音のあとに、ドレイン（吸収）の音
         if (ev.crit.reflected) {
           // ジャストガードとクリティカルが重なった：奪われるはずだった分を、攻撃側が受ける
           flash(ev.from);
@@ -1083,6 +1085,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
           view.hp[ev.from] -= ev.crit.amount; renderStatus();
         } else {
         drainFx(ev.to, ev.from); flash(ev.to);
+        playFX('up', ev.from, { dy: -70 });                        // 奪った側に、アップのエフェクト
         pop(ev.to, `−${ev.crit.amount}`, 'drain', 10, 20);
         setTimeout(() => pop(ev.from, `+${ev.crit.amount}`, 'heal', 0), 480 * speed);
         say(`クリティカル！ ${nameOf(ev.from)}は${nameOf(ev.to)}から${ev.crit.amount}を奪った！`);
