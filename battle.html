@@ -234,7 +234,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   <div id="logModal" hidden>
     <div class="logbox">
       <div class="logtop"><b>対戦ログ</b><span id="logStat"></span>
-        <span class="logbtns"><button class="btn" id="logJson" type="button">JSONで保存</button><button class="btn" id="logCsv" type="button">CSVで保存</button><button class="btn" id="logClear" type="button">全部消す</button><button class="btn" id="logClose" type="button">閉じる</button></span></div>
+        <span class="logbtns"><button class="btn" id="logJson" type="button">JSONで保存</button><button class="btn" id="logCsv" type="button">CSVで保存</button><button class="btn" id="logCopy" type="button">CSVをコピー</button><button class="btn" id="logClear" type="button">全部消す</button><button class="btn" id="logClose" type="button">閉じる</button></span></div>
       <div id="logList"></div>
     </div>
   </div>
@@ -1304,12 +1304,19 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
   $('#btnLog').addEventListener('click', () => { logRender(); $('#logModal').hidden = false; });
   $('#logClose').addEventListener('click', () => { $('#logModal').hidden = true; });
   $('#logJson').addEventListener('click', () => logDownload('pcb-log.json', JSON.stringify(LOGS, null, 1), 'application/json'));
-  $('#logCsv').addEventListener('click', () => {
+  function logCsvText() {
     const q = (v) => '"' + String(v).split('"').join('""') + '"';
     const head = ['match', 'time', 'mode', 'P1', 'P2', 'result', 'hp', 'justGuard', 'jgStep', 'jgCap', 'cpu', 'ver', 'loadAtCap', 'player', 'device', 'round', 'cmd1', 'cmd2', 'hp1_before', 'hp2_before', 'hp1_after', 'hp2_after', 'think1_ms', 'think2_ms', 'loaded1', 'loaded2', 'guard_streak1', 'guard_streak2', 'rolls', 'events'];
     const lines = [head.join(',')];
     LOGS.forEach((m) => m.rounds.forEach((r) => lines.push([m.id, m.t, m.mode, m.chars[0], m.chars[1], m.result || '', (m.rules || {}).hp, (m.rules || {}).justGuard, (m.rules || {}).jgStep, (m.rules || {}).jgCap, (m.rules || {}).cpu, (m.rules || {}).ver, (m.rules || {}).loadAtCap, m.player || '', m.device || '', r.n, r.cmd[0], r.cmd[1], r.before[0], r.before[1], r.after[0], r.after[1], (r.think || [])[0] ?? '', (r.think || [])[1] ?? '', r.st ? r.st.ch[0] : '', r.st ? r.st.ch[1] : '', r.st ? r.st.ds[0] : '', r.st ? r.st.ds[1] : '', r.rolls || '', r.ev].map(q).join(','))));
-    logDownload('pcb-log.csv', '\uFEFF' + lines.join('\r\n'), 'text/csv');
+    return lines.join('\r\n');
+  }
+  $('#logCsv').addEventListener('click', () => logDownload('pcb-log.csv', '\uFEFF' + logCsvText(), 'text/csv'));
+  // \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5148\u304C\u81EA\u52D5\u3067\u6383\u9664\u3055\u308C\u308B\u74B0\u5883\u3067\u3082\u6E21\u305B\u308B\u3088\u3046\u306B\u3001\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u3078\u30B3\u30D4\u30FC\u3082\u3067\u304D\u308B
+  $('#logCopy').addEventListener('click', async () => {
+    const t = logCsvText(), b = $('#logCopy');
+    try { await navigator.clipboard.writeText(t); b.textContent = '\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F'; } catch (e) { b.textContent = '\u30B3\u30D4\u30FC\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F'; }
+    setTimeout(() => { b.textContent = 'CSV\u3092\u30B3\u30D4\u30FC'; }, 1800);
   });
   $('#logClear').addEventListener('click', () => { if (confirm('保存されている対戦ログを、すべて消します。よろしいですか？')) { LOGS = []; curLog = null; logSave(); logRender(); } });
 

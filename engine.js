@@ -267,6 +267,8 @@
     const ps = okOpp.map((c) => f[idx[c]]), z = ps.reduce((x, y) => x + y, 0) || 1;
     return ps.map((x) => x / z);
   }
+  let HARD_NOISE = 0.08;   // 「つよい」が、ランダムな手を混ぜる割合（大きいほど弱い）
+  function setHardNoise(x) { HARD_NOISE = x; }
   let EXPLOIT = 0.6, USE_PRIOR = true;
   function setExploit(x, usePrior) { EXPLOIT = x; if (usePrior !== undefined) USE_PRIOR = usePrior; }
   function cpuMax(S, i, cfg, rnd) {
@@ -325,7 +327,7 @@
       return weighted(w, ok, rnd);
     }
     // hard：予測した相手の手の分布に対して、期待値が最大の手を選ぶ（少し乱す）
-    if (rnd() < 0.08) return ok[Math.floor(rnd() * ok.length)];
+    if (rnd() < HARD_NOISE) return ok[Math.floor(rnd() * ok.length)];
     let best = ok[0], bestV = -1e9;
     for (const c of ok) {
       let v = 0;
@@ -349,7 +351,7 @@
     return best;
   }
 
-  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose, setEqTable, setExploit, humanProb };
+  const api = { DEFAULTS, makeConfig, allowed, succRate, critRate, jgRate, newState, resolve, apply, cpuChoose, setEqTable, setExploit, setHardNoise, humanProb };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.PCB = api;
 })(typeof window !== 'undefined' ? window : globalThis);
