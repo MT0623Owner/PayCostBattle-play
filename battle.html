@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b1020">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>PayCostBattle オンライン対戦</title>
 <style>
 /* RPGツクールMZのサイドビューバトル風。素材は ./src/ 配下（img/character＝SVアクターのシート、img/face、audio） */
@@ -227,6 +231,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       <button class="btn" id="btnSpeed" type="button">演出：通常</button>
       <button class="btn" id="btnLite" type="button" title="回線や端末が重い時用。BGM・エフェクト・画面フラッシュを止めて、軽くします">軽量モード：OFF</button>
       <button class="btn" id="btnMute" type="button">音：ON</button>
+      <button class="btn" id="btnInstall" type="button" hidden title="ブラウザの枠なしの専用ウィンドウで開けるようにします。素材も保存されて、次から速く開きます">アプリとして入れる</button>
       <button class="btn" id="btnLog" type="button" title="これまでの対戦の記録（このブラウザに保存されます）">ログ</button>
       <button class="btn" id="btnMenu" type="button">メニューに戻る</button>
     </div>
@@ -506,7 +511,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---- キャラのボイス（audio/voice/<キャラ名>/*.wav。ある キャラだけ）。Web Audioで、音量をそろえて少し持ち上げて鳴らす ----
   const VOICE_NAMES = ['Sanemi'];                                  // ボイスがあるキャラ（WI_NAMES の名前）
-  const VOICE_FILES = ['Attack_1', 'Attack_2', 'Critical_Attack', 'Critical_Damage', 'Damage_1', 'Damage_2', 'Defeat', 'Gurad', 'JustGurad_Attack', 'JustGurad_Damage', 'Powerup', 'Start', 'Win'];
+  const VOICE_FILES = ['Attack_1', 'Attack_2', 'Critical_Attack', 'Critical_Damage', 'Damage_1', 'Damage_2', 'Defeat', 'Gurad', 'JustGurad_Attack', 'JustGurad_Damage', 'Heal', 'Start', 'Win'];
   const VOICE_RMS = 0.115;                                         // 目標の音量（RMS。約−19dB）。小さい声ほど大きく持ち上げる
   const voiceBuf = {}, voiceLoading = {};
   let voiceOut = null;
@@ -546,7 +551,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
 
   // ---- BGM：OGGのループタグ（LOOPSTART／LOOPLENGTH。ツクールMZの形式）を読んで、ループ位置を守って繰り返す ----
   // Web Audio で曲を丸ごと展開して、loopStart／loopEnd を指定して再生する。展開すると数十MBのメモリを使うので、軽量モードでは使わない。
-  const BGM_LIST = /*BGM_LIST*/ [{"key":"audio/bgm/03_Endless_Battle.ogg","pack":"bgm-03_Endless_Battle.pack","size":4630395},{"key":"audio/bgm/Battle3_MZ.ogg","pack":"bgm-Battle3_MZ.pack","size":745670},{"key":"audio/bgm/Battledarkfnt3_MVT.ogg","pack":"bgm-Battledarkfnt3_MVT.pack","size":791018},{"key":"audio/bgm/maou_game_battle01.mp3","pack":"bgm-maou_game_battle01.pack","size":1508123},{"key":"audio/bgm/maou_game_battle37.mp3","pack":"bgm-maou_game_battle37.pack","size":984003},{"key":"audio/bgm/maou_game_boss08.mp3","pack":"bgm-maou_game_boss08.pack","size":1080551}];
+  const BGM_LIST = /*BGM_LIST*/ [{"key":"audio/bgm/Battle3_MZ.ogg","pack":"bgm-Battle3_MZ.pack","size":745670},{"key":"audio/bgm/Battledarkfnt3_MVT.ogg","pack":"bgm-Battledarkfnt3_MVT.pack","size":791018},{"key":"audio/bgm/maou_game_battle01.mp3","pack":"bgm-maou_game_battle01.pack","size":1508123},{"key":"audio/bgm/maou_game_battle37.mp3","pack":"bgm-maou_game_battle37.pack","size":984003},{"key":"audio/bgm/maou_game_boss08.mp3","pack":"bgm-maou_game_boss08.pack","size":1080551}];
   let actx = null, bgmGain = null, bgmSrc = null, bgmData = null, bgmOn = false, bgmToken = 0;
   function audioCtx() {
     if (!actx) {
@@ -1194,7 +1199,7 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       const b = B[ev.who];
       say(`${nameOf(ev.who)}は力を溜めた！`);
       b.setMotion('chant', true); playSE(SE.charge, 0.8);
-      playVoice(ev.who, 'Powerup');
+      playVoice(ev.who, 'Heal');
       playFX('power', ev.who, { dy: -70 });                      // 足元から立ち上るので、キャラの足元に置く
       if (ev.loaded) bigText('CHARGE!', 'charge');
       pop(ev.who, `+${ev.gain}`, 'heal');
@@ -2045,6 +2050,20 @@ input[type="text"], input:not([type]) { background: var(--win-bg); color: var(--
       initFX();
     }
   }
+
+  // ---- アプリ化（PWA）：素材を保存して、次から速く開く。https の公開ページだけ（手元の開発では、素材が古いまま残らないよう動かさない。?sw=1 で試せる） ----
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || /[?&]sw=1/.test(location.search))) {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* 登録できなくても、通常どおり動く */ });
+  }
+  let installEvt = null;
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; $('#btnInstall').hidden = false; });
+  window.addEventListener('appinstalled', () => { installEvt = null; $('#btnInstall').hidden = true; });
+  $('#btnInstall').addEventListener('click', async () => {
+    if (!installEvt) return;
+    installEvt.prompt();
+    try { await installEvt.userChoice; } catch (e) { /* 無視 */ }
+    installEvt = null; $('#btnInstall').hidden = true;
+  });
 
   // 初期化
   bootAssets();
